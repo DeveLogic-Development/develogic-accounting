@@ -9,6 +9,7 @@ import { FilterBar } from '@/design-system/patterns/FilterBar';
 import { ResponsiveList } from '@/design-system/patterns/ResponsiveList';
 import { QuoteStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
@@ -24,7 +25,7 @@ export function QuotesListPage() {
   const [issueDateTo, setIssueDateTo] = useState('');
   const [sort, setSort] = useState<'issue_desc' | 'issue_asc' | 'total_desc' | 'total_asc'>('issue_desc');
   const [segment, setSegment] = useState<'all' | 'needs_action' | 'accepted_not_converted'>('all');
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
 
   const clientNameById = useMemo(
     () => new Map(clients.map((client) => [client.id, client.name])),
@@ -63,7 +64,10 @@ export function QuotesListPage() {
 
   const handleTransition = (quoteId: string, target: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired') => {
     const result = transitionQuote(quoteId, target);
-    setMessage(result.ok ? `Quote marked as ${target.replace('_', ' ')}.` : result.error ?? 'Action failed.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? `Quote marked as ${target.replace('_', ' ')}.` : result.error ?? 'Action failed.',
+    });
   };
 
   const handleDuplicate = (quoteId: string) => {
@@ -72,7 +76,7 @@ export function QuotesListPage() {
       navigate(`/quotes/${result.data.id}/edit`);
       return;
     }
-    setMessage(result.error ?? 'Unable to duplicate quote.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to duplicate quote.' });
   };
 
   const handleConvert = (quoteId: string) => {
@@ -81,7 +85,7 @@ export function QuotesListPage() {
       navigate(`/invoices/${result.data.id}`);
       return;
     }
-    setMessage(result.error ?? 'Unable to convert quote.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to convert quote.' });
   };
 
   return (
@@ -96,28 +100,31 @@ export function QuotesListPage() {
         }
       />
 
-      {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
-      <FilterBar>
+      <FilterBar ariaLabel="Quote filters">
         <Select
+          aria-label="Quote segment filter"
           value={segment}
           onChange={(event) =>
             setSegment(event.target.value as 'all' | 'needs_action' | 'accepted_not_converted')
           }
           options={[
-            { label: 'All Segments', value: 'all' },
+            { label: 'All Views', value: 'all' },
             { label: 'Needs Action', value: 'needs_action' },
             { label: 'Accepted Awaiting Conversion', value: 'accepted_not_converted' },
           ]}
           style={{ width: 250 }}
         />
         <Input
+          aria-label="Search quotes"
           placeholder="Search quote number, client, or status"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(360px, 100%)' }}
         />
         <Select
+          aria-label="Client filter"
           value={clientId}
           onChange={(event) => setClientId(event.target.value)}
           options={[
@@ -127,6 +134,7 @@ export function QuotesListPage() {
           style={{ width: 220 }}
         />
         <Select
+          aria-label="Quote status filter"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
           options={[
@@ -142,18 +150,21 @@ export function QuotesListPage() {
           style={{ width: 180 }}
         />
         <Input
+          aria-label="Issue date from"
           type="date"
           value={issueDateFrom}
           onChange={(event) => setIssueDateFrom(event.target.value)}
           style={{ width: 180 }}
         />
         <Input
+          aria-label="Issue date to"
           type="date"
           value={issueDateTo}
           onChange={(event) => setIssueDateTo(event.target.value)}
           style={{ width: 180 }}
         />
         <Select
+          aria-label="Sort quotes"
           value={sort}
           onChange={(event) =>
             setSort(event.target.value as 'issue_desc' | 'issue_asc' | 'total_desc' | 'total_asc')
@@ -204,12 +215,12 @@ export function QuotesListPage() {
                           <Link to={`/quotes/${quote.id}`}>View</Link>
                           {quote.status === 'draft' ? (
                             <Button size="sm" type="button" onClick={() => handleTransition(quote.id, 'sent')}>
-                              Mark Sent
+                              Mark as Sent
                             </Button>
                           ) : null}
                           {quote.status === 'accepted' ? (
                             <Button size="sm" type="button" onClick={() => handleConvert(quote.id)}>
-                              Convert
+                              Convert to Invoice
                             </Button>
                           ) : null}
                           <Button size="sm" type="button" onClick={() => handleDuplicate(quote.id)}>
@@ -251,12 +262,12 @@ export function QuotesListPage() {
                         <Link to={`/quotes/${quote.id}`}>Open</Link>
                         {quote.status === 'draft' ? (
                           <Button size="sm" type="button" onClick={() => handleTransition(quote.id, 'sent')}>
-                            Mark Sent
+                            Mark as Sent
                           </Button>
                         ) : null}
                         {quote.status === 'accepted' ? (
                           <Button size="sm" type="button" onClick={() => handleConvert(quote.id)}>
-                            Convert
+                            Convert to Invoice
                           </Button>
                         ) : null}
                       </div>
@@ -266,7 +277,7 @@ export function QuotesListPage() {
               </>
             }
           />
-          <div className="dl-muted" style={{ marginTop: 10, fontSize: 12 }}>
+          <div className="dl-list-footer">
             Showing {filtered.length} quotes · Page 1 of 1
           </div>
         </>

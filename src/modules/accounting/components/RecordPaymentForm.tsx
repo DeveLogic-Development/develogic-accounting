@@ -3,6 +3,7 @@ import { Button } from '@/design-system/primitives/Button';
 import { Input } from '@/design-system/primitives/Input';
 import { Select } from '@/design-system/primitives/Select';
 import { Textarea } from '@/design-system/primitives/Textarea';
+import { InlineNotice } from '@/design-system/patterns/InlineNotice';
 import { PaymentInput } from '../domain/types';
 import { todayIsoDate } from '../domain/date';
 
@@ -82,7 +83,7 @@ export function RecordPaymentForm({ onSubmit, onCancel }: RecordPaymentFormProps
         placeholder="Optional note"
       />
 
-      {error ? <div className="dl-validation-inline">{error}</div> : null}
+      {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
 
       <div className="dl-inline-actions" style={{ justifyContent: 'flex-end' }}>
         {onCancel ? (

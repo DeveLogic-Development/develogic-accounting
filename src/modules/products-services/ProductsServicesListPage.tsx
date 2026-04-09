@@ -48,19 +48,21 @@ export function ProductsServicesListPage() {
         actions={
           <>
             <Button variant="secondary">Bulk Update</Button>
-            <Button variant="primary">Add Item</Button>
+            <Button variant="primary">Create Item</Button>
           </>
         }
       />
 
-      <FilterBar>
+      <FilterBar ariaLabel="Product and service filters">
         <Input
+          aria-label="Search products and services"
           placeholder="Search items"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(340px, 100%)' }}
         />
         <Select
+          aria-label="Availability filter"
           value={activeState}
           onChange={(event) => setActiveState(event.target.value as 'all' | 'active' | 'inactive')}
           options={[
@@ -71,6 +73,7 @@ export function ProductsServicesListPage() {
           style={{ width: 180 }}
         />
         <Select
+          aria-label="Type filter"
           value={type}
           onChange={(event) => setType(event.target.value as 'all' | 'product' | 'service')}
           options={[
@@ -81,6 +84,7 @@ export function ProductsServicesListPage() {
           style={{ width: 160 }}
         />
         <Select
+          aria-label="Sort products and services"
           value={sort}
           onChange={(event) => setSort(event.target.value as 'usage_desc' | 'price_desc' | 'name_asc')}
           options={[
@@ -96,7 +100,7 @@ export function ProductsServicesListPage() {
         <EmptyState
           title="No products or services"
           description="Create your first billing item to speed up quote and invoice creation."
-          action={<Button variant="primary">Add Item</Button>}
+          action={<Button variant="primary">Create Item</Button>}
         />
       ) : (
         <>
@@ -122,7 +126,7 @@ export function ProductsServicesListPage() {
                     <td>{entry.taxCategory}</td>
                     <td>{entry.usageCount}</td>
                     <td>
-                      <Link to={`/products-services/${entry.id}`}>View</Link>
+                      <Link to={`/products-services/${entry.id}`}>Open Item</Link>
                     </td>
                   </tr>
                 ))}
@@ -161,7 +165,7 @@ export function ProductsServicesListPage() {
               </>
             }
           />
-          <div className="dl-muted" style={{ marginTop: 10, fontSize: 12 }}>
+          <div className="dl-list-footer">
             Showing {filtered.length} items · Page 1 of 1
           </div>
         </>

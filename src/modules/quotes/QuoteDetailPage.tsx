@@ -6,6 +6,7 @@ import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { EmailStatusBadge, QuoteStatusBadge } from '@/design-system/patterns/StatusBadge';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { formatBytes, formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { useTemplates } from '@/modules/templates/hooks/useTemplates';
@@ -25,8 +26,8 @@ const QUICK_ACTION_TRANSITIONS: Array<{
   status: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired';
   label: string;
 }> = [
-  { status: 'sent', label: 'Mark Sent' },
-  { status: 'viewed', label: 'Mark Viewed' },
+  { status: 'sent', label: 'Mark as Sent' },
+  { status: 'viewed', label: 'Mark as Viewed' },
   { status: 'accepted', label: 'Accept' },
   { status: 'rejected', label: 'Reject' },
   { status: 'expired', label: 'Expire' },
@@ -47,8 +48,11 @@ export function QuoteDetailPage() {
     getLogsForDocument,
     createComposeDraftForDocument,
     sendEmailDraft,
+    canSendEmails,
+    emailCapabilityLoading,
+    emailAvailabilityMessage,
   } = useEmails();
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -99,7 +103,10 @@ export function QuoteDetailPage() {
   const handleTransition = (target: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired') => {
     const note = target === 'rejected' ? window.prompt('Optional rejection note') ?? undefined : undefined;
     const result = transitionQuote(quote.id, target, note);
-    setMessage(result.ok ? `Quote marked as ${target}.` : result.error ?? 'Action failed.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? `Quote marked as ${target}.` : result.error ?? 'Action failed.',
+    });
   };
 
   const handleConvert = () => {
@@ -109,7 +116,7 @@ export function QuoteDetailPage() {
       return;
     }
 
-    setMessage(result.error ?? 'Unable to convert quote.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to convert quote.' });
   };
 
   const handleDuplicate = () => {
@@ -119,7 +126,7 @@ export function QuoteDetailPage() {
       return;
     }
 
-    setMessage(result.error ?? 'Unable to duplicate quote.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to duplicate quote.' });
   };
 
   const handleGenerateDraftPdf = async () => {
@@ -131,11 +138,11 @@ export function QuoteDetailPage() {
     setIsGeneratingPdf(false);
 
     if (result.ok && result.data) {
-      setMessage(`Draft PDF generated: ${result.data.file.fileName}`);
+      setNotice({ tone: 'success', text: `Draft PDF generated: ${result.data.file.fileName}` });
       return;
     }
 
-    setMessage(result.error ?? 'Unable to generate draft PDF.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to generate draft PDF.' });
   };
 
   const handleArchivePdf = async () => {
@@ -147,39 +154,47 @@ export function QuoteDetailPage() {
     setIsGeneratingPdf(false);
 
     if (result.ok && result.data) {
-      setMessage(`Archived PDF created: ${result.data.file.fileName}`);
+      setNotice({ tone: 'success', text: `Archived PDF created: ${result.data.file.fileName}` });
       return;
     }
 
-    setMessage(result.error ?? 'Unable to archive PDF.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to archive PDF.' });
   };
 
   const handleOpenPdf = (recordId?: string) => {
     if (!recordId) {
-      setMessage('No PDF record is available yet.');
+      setNotice({ tone: 'warning', text: 'No PDF record is available yet.' });
       return;
     }
 
     const result = openPdfRecord(recordId);
     if (!result.ok) {
-      setMessage(result.error ?? 'Unable to open PDF.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to open PDF.' });
     }
   };
 
   const handleDownloadPdf = (recordId?: string) => {
     if (!recordId) {
-      setMessage('No PDF record is available yet.');
+      setNotice({ tone: 'warning', text: 'No PDF record is available yet.' });
       return;
     }
 
     const result = downloadPdfRecord(recordId);
-    setMessage(result.ok ? 'PDF download started.' : result.error ?? 'Unable to download PDF.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? 'PDF download started.' : result.error ?? 'Unable to download PDF.',
+    });
   };
 
   const handleOpenSendDialog = () => {
+    if (!canSendEmails) {
+      setNotice({ tone: 'warning', text: emailAvailabilityMessage ?? 'Email sending is currently unavailable.' });
+      return;
+    }
+
     const result = createComposeDraftForDocument({ documentType: 'quote', documentId: quote.id });
     if (!result.ok || !result.data) {
-      setMessage(result.error ?? 'Unable to prepare email draft.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to prepare email draft.' });
       return;
     }
 
@@ -194,13 +209,16 @@ export function QuoteDetailPage() {
     setIsSendingEmail(false);
 
     if (!result.ok) {
-      setMessage(result.error ?? 'Unable to send quote email.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to send quote email.' });
       return;
     }
 
     setComposeOpen(false);
     setComposeDraft(null);
-    setMessage(result.warning ?? 'Quote email sent successfully.');
+    setNotice({
+      tone: result.warning ? 'warning' : 'success',
+      text: result.warning ?? 'Quote email sent successfully.',
+    });
   };
 
   return (
@@ -218,8 +236,13 @@ export function QuoteDetailPage() {
             <Button type="button" onClick={handleDuplicate}>
               Duplicate
             </Button>
-            <Button type="button" variant="primary" onClick={handleOpenSendDialog}>
-              Send Quote Email
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleOpenSendDialog}
+              disabled={!canSendEmails || emailCapabilityLoading}
+            >
+              {emailCapabilityLoading ? 'Checking Email...' : 'Send Quote Email'}
             </Button>
             {quote.status === 'draft' ? (
               <Button type="button" variant="secondary" onClick={handleGenerateDraftPdf} disabled={isGeneratingPdf}>
@@ -238,7 +261,7 @@ export function QuoteDetailPage() {
         }
       />
 
-      {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
       <div className="dl-grid cols-3">
         <Card title="Status">
@@ -265,7 +288,7 @@ export function QuoteDetailPage() {
         </Card>
       </div>
 
-      <div className="dl-grid cols-2" style={{ marginTop: 16 }}>
+      <div className="dl-grid cols-2 dl-page-section">
         <Card title="Client Details" subtitle="Primary billing contact">
           <div style={{ display: 'grid', gap: 8 }}>
             <div>{client?.contactName ?? 'N/A'}</div>
@@ -290,13 +313,13 @@ export function QuoteDetailPage() {
         </Card>
       </div>
 
-      <div style={{ marginTop: 16 }}>
+      <div className="dl-page-section">
         <Card title="Line Items" subtitle="Quote breakdown">
           <DocumentLineItemsTable items={quote.items} currencyCode={quote.currencyCode} />
         </Card>
       </div>
 
-      <div style={{ marginTop: 16 }}>
+      <div className="dl-page-section">
         <Card title="PDF Archive" subtitle="Draft preview and immutable historical versions">
           {pdfRecords.length === 0 ? (
             <p className="dl-muted" style={{ margin: 0 }}>
@@ -336,7 +359,7 @@ export function QuoteDetailPage() {
         </Card>
       </div>
 
-      <div style={{ marginTop: 16 }}>
+      <div className="dl-page-section">
         <Card title="Email Delivery" subtitle="Send attempts and outcomes for this quote">
           {recentEmailLogs.length === 0 ? (
             <p className="dl-muted" style={{ margin: 0 }}>
@@ -361,8 +384,8 @@ export function QuoteDetailPage() {
                 </div>
               ))}
               <div className="dl-inline-actions">
-                <Button size="sm" onClick={handleOpenSendDialog}>
-                  Compose & Send
+                <Button size="sm" onClick={handleOpenSendDialog} disabled={!canSendEmails || emailCapabilityLoading}>
+                  Compose and Send
                 </Button>
                 <Link to="/emails/history">
                   <Button size="sm" variant="secondary">
@@ -375,7 +398,7 @@ export function QuoteDetailPage() {
         </Card>
       </div>
 
-      <div style={{ marginTop: 16 }}>
+      <div className="dl-page-section">
         <DocumentStatusTimeline entries={quote.statusHistory} title="Quote Timeline" />
       </div>
 
@@ -385,6 +408,7 @@ export function QuoteDetailPage() {
         draft={composeDraft}
         attachmentOptions={attachmentOptions}
         sending={isSendingEmail}
+        sendDisabledReason={!canSendEmails ? emailAvailabilityMessage : undefined}
         onClose={() => {
           setComposeOpen(false);
           setComposeDraft(null);

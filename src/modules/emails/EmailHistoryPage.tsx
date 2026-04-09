@@ -7,6 +7,7 @@ import { Select } from '@/design-system/primitives/Select';
 import { Button } from '@/design-system/primitives/Button';
 import { ResponsiveList } from '@/design-system/patterns/ResponsiveList';
 import { EmailStatusBadge } from '@/design-system/patterns/StatusBadge';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { formatDate } from '@/utils/format';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { useEmails } from '@/modules/emails/hooks/useEmails';
@@ -21,7 +22,14 @@ function documentPath(row: EmailLogListRow): string {
 }
 
 export function EmailHistoryPage() {
-  const { rows, createComposeDraftForResend, sendEmailDraft } = useEmails();
+  const {
+    rows,
+    createComposeDraftForResend,
+    sendEmailDraft,
+    canSendEmails,
+    emailCapabilityLoading,
+    emailAvailabilityMessage,
+  } = useEmails();
   const { getPdfRecordsForDocument } = usePdfArchive();
 
   const [search, setSearch] = useState('');
@@ -32,7 +40,7 @@ export function EmailHistoryPage() {
   const [sort, setSort] = useState<'attempted_desc' | 'attempted_asc'>('attempted_desc');
   const [composeDraft, setComposeDraft] = useState<EmailComposeDraft | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [composeMessage, setComposeMessage] = useState<string | null>(null);
+  const [composeNotice, setComposeNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
   const [sending, setSending] = useState(false);
 
   const filtered = useMemo(
@@ -74,14 +82,19 @@ export function EmailHistoryPage() {
   }, [composeDraft, getPdfRecordsForDocument]);
 
   const openResend = (logId: string) => {
+    if (!canSendEmails) {
+      setComposeNotice({ tone: 'warning', text: emailAvailabilityMessage ?? 'Email sending is currently unavailable.' });
+      return;
+    }
+
     const result = createComposeDraftForResend(logId);
     if (!result.ok || !result.data) {
-      setComposeMessage(result.error ?? 'Unable to prepare resend draft.');
+      setComposeNotice({ tone: 'error', text: result.error ?? 'Unable to prepare resend draft.' });
       return;
     }
 
     setComposeDraft(result.data);
-    setComposeMessage(null);
+    setComposeNotice(null);
     setComposeOpen(true);
   };
 
@@ -92,13 +105,16 @@ export function EmailHistoryPage() {
     setSending(false);
 
     if (result.ok) {
-      setComposeMessage(result.warning ?? 'Email sent successfully.');
+      setComposeNotice({
+        tone: result.warning ? 'warning' : 'success',
+        text: result.warning ?? 'Email sent successfully.',
+      });
       setComposeOpen(false);
       setComposeDraft(null);
       return;
     }
 
-    setComposeMessage(result.error ?? 'Unable to send email.');
+    setComposeNotice({ tone: 'error', text: result.error ?? 'Unable to send email.' });
   };
 
   return (
@@ -108,23 +124,34 @@ export function EmailHistoryPage() {
         subtitle="Delivery outcomes for quote and invoice emails with archived attachment traceability."
         actions={
           filtered.length > 0 ? (
-            <Button variant="secondary" onClick={() => openResend(filtered[0].id)}>
-              Resend Latest
+            <Button
+              variant="secondary"
+              onClick={() => openResend(filtered[0].id)}
+              disabled={!canSendEmails || emailCapabilityLoading}
+            >
+              {emailCapabilityLoading ? 'Checking Email...' : 'Resend Most Recent'}
             </Button>
           ) : undefined
         }
       />
 
-      {composeMessage ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{composeMessage}</div> : null}
+      {composeNotice ? <InlineNotice tone={composeNotice.tone}>{composeNotice.text}</InlineNotice> : null}
+      {!emailCapabilityLoading && !canSendEmails ? (
+        <InlineNotice tone="warning">
+          {emailAvailabilityMessage ?? 'Email sending is currently unavailable.'}
+        </InlineNotice>
+      ) : null}
 
-      <FilterBar>
+      <FilterBar ariaLabel="Email history filters">
         <Input
+          aria-label="Search email history"
           placeholder="Search by recipient, subject, or document #"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(320px, 100%)' }}
         />
         <Select
+          aria-label="Email status filter"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
           options={[
@@ -138,6 +165,7 @@ export function EmailHistoryPage() {
           style={{ width: 180 }}
         />
         <Select
+          aria-label="Sort email history"
           value={sort}
           onChange={(event) => setSort(event.target.value as 'attempted_desc' | 'attempted_asc')}
           options={[
@@ -147,18 +175,21 @@ export function EmailHistoryPage() {
           style={{ width: 220 }}
         />
         <Input
+          aria-label="Attempt date from"
           type="date"
           value={dateFrom}
           onChange={(event) => setDateFrom(event.target.value)}
           style={{ width: 170 }}
         />
         <Input
+          aria-label="Attempt date to"
           type="date"
           value={dateTo}
           onChange={(event) => setDateTo(event.target.value)}
           style={{ width: 170 }}
         />
         <Select
+          aria-label="Document type filter"
           value={type}
           onChange={(event) => setType(event.target.value)}
           options={[
@@ -206,10 +237,14 @@ export function EmailHistoryPage() {
                     <div className="dl-inline-actions">
                       <Link to={documentPath(entry)}>
                         <Button size="sm" variant="secondary">
-                          Open Doc
+                          Open Document
                         </Button>
                       </Link>
-                      <Button size="sm" onClick={() => openResend(entry.id)}>
+                      <Button
+                        size="sm"
+                        onClick={() => openResend(entry.id)}
+                        disabled={!canSendEmails || emailCapabilityLoading}
+                      >
                         Resend
                       </Button>
                     </div>
@@ -233,10 +268,10 @@ export function EmailHistoryPage() {
                   <div className="dl-inline-actions" style={{ marginTop: 10 }}>
                     <Link to={documentPath(entry)}>
                       <Button size="sm" variant="secondary">
-                        Open Doc
+                        Open Document
                       </Button>
                     </Link>
-                    <Button size="sm" onClick={() => openResend(entry.id)}>
+                    <Button size="sm" onClick={() => openResend(entry.id)} disabled={!canSendEmails || emailCapabilityLoading}>
                       Resend
                     </Button>
                   </div>
@@ -253,7 +288,9 @@ export function EmailHistoryPage() {
         draft={composeDraft}
         attachmentOptions={attachmentOptions}
         sending={sending}
-        message={composeMessage}
+        message={composeNotice?.text}
+        messageTone={composeNotice?.tone}
+        sendDisabledReason={!canSendEmails ? emailAvailabilityMessage : undefined}
         onClose={() => {
           setComposeOpen(false);
           setComposeDraft(null);

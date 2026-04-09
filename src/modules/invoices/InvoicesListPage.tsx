@@ -9,6 +9,7 @@ import { FilterBar } from '@/design-system/patterns/FilterBar';
 import { ResponsiveList } from '@/design-system/patterns/ResponsiveList';
 import { InvoiceStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
@@ -25,7 +26,7 @@ export function InvoicesListPage() {
   const [dueBefore, setDueBefore] = useState('');
   const [segment, setSegment] = useState<'all' | 'unpaid' | 'overdue'>('all');
   const [sort, setSort] = useState<'due_asc' | 'due_desc' | 'outstanding_desc' | 'issue_desc'>('due_asc');
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
 
   const clientNameById = useMemo(
     () => new Map(clients.map((client) => [client.id, client.name])),
@@ -90,12 +91,15 @@ export function InvoicesListPage() {
       return;
     }
 
-    setMessage(result.error ?? 'Unable to duplicate invoice.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to duplicate invoice.' });
   };
 
   const handleTransition = (invoiceId: string, target: 'approved' | 'sent') => {
     const result = transitionInvoice(invoiceId, target);
-    setMessage(result.ok ? `Invoice marked as ${target}.` : result.error ?? 'Action failed.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? `Invoice marked as ${target}.` : result.error ?? 'Action failed.',
+    });
   };
 
   return (
@@ -110,26 +114,29 @@ export function InvoicesListPage() {
         }
       />
 
-      {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
-      <FilterBar>
+      <FilterBar ariaLabel="Invoice filters">
         <Select
+          aria-label="Invoice segment filter"
           value={segment}
           onChange={(event) => setSegment(event.target.value as 'all' | 'unpaid' | 'overdue')}
           options={[
-            { label: 'All Segments', value: 'all' },
+            { label: 'All Views', value: 'all' },
             { label: 'Unpaid', value: 'unpaid' },
             { label: 'Overdue', value: 'overdue' },
           ]}
           style={{ width: 180 }}
         />
         <Input
+          aria-label="Search invoices"
           placeholder="Search invoice number, client, or status"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(360px, 100%)' }}
         />
         <Select
+          aria-label="Client filter"
           value={clientId}
           onChange={(event) => setClientId(event.target.value)}
           options={[
@@ -139,6 +146,7 @@ export function InvoicesListPage() {
           style={{ width: 220 }}
         />
         <Select
+          aria-label="Invoice status filter"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
           options={[
@@ -154,24 +162,28 @@ export function InvoicesListPage() {
           style={{ width: 190 }}
         />
         <Input
+          aria-label="Issue date from"
           type="date"
           value={issueDateFrom}
           onChange={(event) => setIssueDateFrom(event.target.value)}
           style={{ width: 170 }}
         />
         <Input
+          aria-label="Issue date to"
           type="date"
           value={issueDateTo}
           onChange={(event) => setIssueDateTo(event.target.value)}
           style={{ width: 170 }}
         />
         <Input
+          aria-label="Due before date"
           type="date"
           value={dueBefore}
           onChange={(event) => setDueBefore(event.target.value)}
           style={{ width: 180 }}
         />
         <Select
+          aria-label="Sort invoices"
           value={sort}
           onChange={(event) =>
             setSort(event.target.value as 'due_asc' | 'due_desc' | 'outstanding_desc' | 'issue_desc')
@@ -239,7 +251,7 @@ export function InvoicesListPage() {
                           ) : null}
                           {invoice.status === 'approved' ? (
                             <Button size="sm" type="button" onClick={() => handleTransition(invoice.id, 'sent')}>
-                              Mark Sent
+                              Mark as Sent
                             </Button>
                           ) : null}
                           <Button size="sm" type="button" onClick={() => handleDuplicate(invoice.id)}>
@@ -286,7 +298,7 @@ export function InvoicesListPage() {
                         ) : null}
                         {invoice.status === 'approved' ? (
                           <Button size="sm" type="button" onClick={() => handleTransition(invoice.id, 'sent')}>
-                            Mark Sent
+                            Mark as Sent
                           </Button>
                         ) : null}
                       </div>
@@ -296,7 +308,7 @@ export function InvoicesListPage() {
               </>
             }
           />
-          <div className="dl-muted" style={{ marginTop: 10, fontSize: 12 }}>
+          <div className="dl-list-footer">
             Showing {filtered.length} invoices · Page 1 of 1
           </div>
         </>

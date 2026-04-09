@@ -143,4 +143,34 @@ describe('attachment resolution', () => {
     expect(result.record?.id).toBe('pdf_3');
     expect(result.generated).toBe(true);
   });
+
+  it('rejects non-immutable preferred records and generates a safe immutable archive', async () => {
+    const draftRecord = makePdfRecord({
+      id: 'pdf_draft',
+      documentType: 'quote',
+      documentId: 'q_9',
+      revision: 1,
+      immutable: false,
+    });
+    const generatedRecord = makePdfRecord({
+      id: 'pdf_final',
+      documentType: 'quote',
+      documentId: 'q_9',
+      revision: 2,
+      immutable: true,
+    });
+
+    const result = await resolveAttachmentRecordForSend({
+      documentType: 'quote',
+      documentId: 'q_9',
+      preferredRecordId: 'pdf_draft',
+      getRecordById: () => draftRecord,
+      getLatestImmutableRecord: () => undefined,
+      generateHistoricalArchive: async () => ({ ok: true, data: generatedRecord }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.record?.id).toBe('pdf_final');
+    expect(result.generated).toBe(true);
+  });
 });

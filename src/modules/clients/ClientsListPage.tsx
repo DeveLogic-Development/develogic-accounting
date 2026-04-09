@@ -52,31 +52,34 @@ export function ClientsListPage() {
         actions={
           <>
             <Button variant="secondary">Import CSV</Button>
-            <Button variant="primary">Add Client</Button>
+            <Button variant="primary">Create Client</Button>
           </>
         }
       />
 
-      <FilterBar>
+      <FilterBar ariaLabel="Client filters">
         <Input
+          aria-label="Search clients"
           placeholder="Search clients"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(340px, 100%)' }}
         />
         <Select
+          aria-label="Client segment filter"
           value={segment}
           onChange={(event) =>
             setSegment(event.target.value as 'all' | 'with_outstanding' | 'over_10000')
           }
           options={[
-            { label: 'All Segments', value: 'all' },
+            { label: 'All Views', value: 'all' },
             { label: 'With Outstanding', value: 'with_outstanding' },
             { label: 'Outstanding >= R10,000', value: 'over_10000' },
           ]}
           style={{ width: 220 }}
         />
         <Select
+          aria-label="Client status filter"
           value={status}
           onChange={(event) => setStatus(event.target.value as 'all' | 'active' | 'inactive')}
           options={[
@@ -87,6 +90,7 @@ export function ClientsListPage() {
           style={{ width: 170 }}
         />
         <Select
+          aria-label="Sort clients"
           value={sort}
           onChange={(event) =>
             setSort(event.target.value as 'recent' | 'outstanding_desc' | 'name_asc')
@@ -114,7 +118,7 @@ export function ClientsListPage() {
         <EmptyState
           title="No clients found"
           description="Try adjusting your filters or add a new client profile."
-          action={<Button variant="primary">Add Client</Button>}
+          action={<Button variant="primary">Create Client</Button>}
         />
       ) : (
         <>
@@ -144,7 +148,7 @@ export function ClientsListPage() {
                     <td>{formatCurrency(client.outstandingBalance)}</td>
                     <td>{formatDate(client.lastActivityAt)}</td>
                     <td>
-                      <Link to={`/clients/${client.id}`}>View</Link>
+                      <Link to={`/clients/${client.id}`}>Open Client</Link>
                     </td>
                   </tr>
                 ))}
@@ -183,7 +187,7 @@ export function ClientsListPage() {
               </>
             }
           />
-          <div className="dl-muted" style={{ marginTop: 10, fontSize: 12 }}>
+          <div className="dl-list-footer">
             Showing {filtered.length} clients · Page 1 of 1
           </div>
         </>

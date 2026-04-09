@@ -37,8 +37,9 @@ export function ReportsPage() {
         subtitle="Operational summaries for receivables, quote conversion, payments, email activity, and archived documents."
       />
 
-      <FilterBar>
+      <FilterBar ariaLabel="Report date filters">
         <Select
+          aria-label="Date range preset"
           value={preset}
           onChange={(event) => setPreset(event.target.value as DateRangePreset)}
           options={[
@@ -53,12 +54,14 @@ export function ReportsPage() {
         {preset === 'custom' ? (
           <>
             <Input
+              aria-label="Custom range start"
               type="date"
               value={customFrom}
               onChange={(event) => setCustomFrom(event.target.value)}
               style={{ width: 170 }}
             />
             <Input
+              aria-label="Custom range end"
               type="date"
               value={customTo}
               onChange={(event) => setCustomTo(event.target.value)}
@@ -106,7 +109,7 @@ export function ReportsPage() {
         </Card>
       </div>
 
-      <div className="dl-grid cols-2" style={{ marginTop: 16 }}>
+      <div className="dl-grid cols-2 dl-page-section">
         <Card title="Monthly Sales Summary" subtitle="Invoice volume and value in selected period">
           <div style={{ display: 'grid', gap: 8 }}>
             <MetricRow label="Invoices" value={String(summary.monthlySales.invoicesCount)} />
@@ -139,7 +142,7 @@ export function ReportsPage() {
         </Card>
       </div>
 
-      <div className="dl-grid cols-2" style={{ marginTop: 16 }}>
+      <div className="dl-grid cols-2 dl-page-section">
         <Card title="Email Send Activity" subtitle="Delivery reliability across quote and invoice sends">
           <div style={{ display: 'grid', gap: 8 }}>
             <MetricRow label="Total Sends" value={String(summary.emailActivity.totalSends)} />

@@ -9,6 +9,7 @@ import { formatBytes, formatDate } from '@/utils/format';
 import { Card } from '@/design-system/primitives/Card';
 import { Button } from '@/design-system/primitives/Button';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
 import { PdfArchiveListRow, PdfArchiveRecord, PdfGenerationMode } from '@/modules/pdf/domain/types';
 import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
@@ -39,7 +40,7 @@ export function PdfArchivePage() {
   const [dateTo, setDateTo] = useState('');
   const [sort, setSort] = useState<'generated_desc' | 'generated_asc'>('generated_desc');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
 
   const filtered = useMemo(
     () => {
@@ -84,16 +85,19 @@ export function PdfArchivePage() {
   const handleOpen = (recordId: string) => {
     const result = openPdfRecord(recordId);
     if (!result.ok) {
-      setMessage(result.error ?? 'Unable to open PDF.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to open PDF.' });
       return;
     }
 
-    setMessage(null);
+    setNotice(null);
   };
 
   const handleDownload = (recordId: string) => {
     const result = downloadPdfRecord(recordId);
-    setMessage(result.ok ? 'PDF download started.' : result.error ?? 'Unable to download PDF.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? 'PDF download started.' : result.error ?? 'Unable to download PDF.',
+    });
   };
 
   return (
@@ -103,16 +107,18 @@ export function PdfArchivePage() {
         subtitle="Immutable and draft PDF generations tied to template version context."
       />
 
-      {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
-      <FilterBar>
+      <FilterBar ariaLabel="PDF archive filters">
         <Input
+          aria-label="Search PDF archive"
           placeholder="Search document number, client, template, checksum"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(420px, 100%)' }}
         />
         <Select
+          aria-label="Document type filter"
           value={type}
           onChange={(event) => setType(event.target.value)}
           options={[
@@ -123,6 +129,7 @@ export function PdfArchivePage() {
           style={{ width: 180 }}
         />
         <Select
+          aria-label="Sort archive records"
           value={sort}
           onChange={(event) => setSort(event.target.value as 'generated_desc' | 'generated_asc')}
           options={[
@@ -132,18 +139,21 @@ export function PdfArchivePage() {
           style={{ width: 180 }}
         />
         <Input
+          aria-label="Generation date from"
           type="date"
           value={dateFrom}
           onChange={(event) => setDateFrom(event.target.value)}
           style={{ width: 170 }}
         />
         <Input
+          aria-label="Generation date to"
           type="date"
           value={dateTo}
           onChange={(event) => setDateTo(event.target.value)}
           style={{ width: 170 }}
         />
         <Select
+          aria-label="Generation mode filter"
           value={mode}
           onChange={(event) => setMode(event.target.value)}
           options={[

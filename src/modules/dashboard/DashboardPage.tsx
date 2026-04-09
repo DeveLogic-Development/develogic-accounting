@@ -6,7 +6,10 @@ import { StatCard } from '@/design-system/patterns/StatCard';
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { InvoiceStatusBadge, QuoteStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { InlineNotice } from '@/design-system/patterns/InlineNotice';
 import { useDashboardInsights } from '@/modules/insights/hooks/useInsights';
+import { appConfig } from '@/config/appConfig';
+import { useEmails } from '@/modules/emails/hooks/useEmails';
 
 function TrendBars(props: { rows: Array<{ label: string; invoicedMinor: number; paidMinor: number }> }) {
   const max = Math.max(
@@ -51,6 +54,7 @@ function TrendBars(props: { rows: Array<{ label: string; invoicedMinor: number; 
 
 export function DashboardPage() {
   const insights = useDashboardInsights();
+  const { emailCapability, emailCapabilityLoading } = useEmails();
 
   return (
     <>
@@ -69,7 +73,39 @@ export function DashboardPage() {
         }
       />
 
-      <section className="dl-grid cols-4">
+      {appConfig.warnings.length > 0 || !emailCapabilityLoading ? (
+        <div className="dl-grid cols-2" style={{ marginBottom: 16 }}>
+          {appConfig.warnings.length > 0 ? (
+            <Card title="Configuration Notes" subtitle="Environment setup not fully complete yet">
+              <div style={{ display: 'grid', gap: 8 }}>
+                {appConfig.warnings.map((warning) => (
+                  <InlineNotice key={warning} tone="warning">
+                    {warning}
+                  </InlineNotice>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+          {!emailCapabilityLoading ? (
+            <Card title="Email Capability" subtitle="Current server transport readiness">
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div>
+                  <strong>Status:</strong>{' '}
+                  {emailCapability.canSend ? 'Available' : 'Unavailable'}
+                </div>
+                <div>
+                  <strong>Mode:</strong> {emailCapability.mode}
+                </div>
+                {emailCapability.reason ? (
+                  <div className="dl-muted">{emailCapability.reason}</div>
+                ) : null}
+              </div>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
+
+      <section className="dl-grid cols-4 dl-page-section">
         <StatCard
           label="Outstanding"
           value={formatMinorCurrency(insights.financial.totalOutstandingMinor)}
@@ -92,7 +128,7 @@ export function DashboardPage() {
         />
       </section>
 
-      <section className="dl-grid cols-4" style={{ marginTop: 16 }}>
+      <section className="dl-grid cols-4 dl-page-section">
         <StatCard
           label="Accepted, Not Converted"
           value={String(insights.quotes.acceptedNotConvertedCount)}
@@ -115,7 +151,7 @@ export function DashboardPage() {
         />
       </section>
 
-      <div className="dl-grid cols-3" style={{ marginTop: 16 }}>
+      <div className="dl-grid cols-3 dl-page-section">
         <Card className="dl-grid-span-2" style={{ gridColumn: 'span 2' }}>
           <TrendBars rows={insights.trends} />
         </Card>
@@ -141,7 +177,7 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <div className="dl-grid cols-2" style={{ marginTop: 16 }}>
+      <div className="dl-grid cols-2 dl-page-section">
         <Card title="Recent Invoices" subtitle="Outstanding and send visibility" rightSlot={<Link to="/invoices">View all</Link>}>
           {insights.recentInvoiceSummaries.length === 0 ? (
             <EmptyState title="No invoices yet" description="Create invoices to track receivables and payment status." />
@@ -189,7 +225,7 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <div className="dl-grid cols-3" style={{ marginTop: 16 }}>
+      <div className="dl-grid cols-3 dl-page-section">
         <Card title="Top Clients by Outstanding" rightSlot={<Link to="/clients">View clients</Link>}>
           {insights.topClientsByOutstanding.length === 0 ? (
             <p className="dl-muted" style={{ margin: 0 }}>No outstanding balances currently.</p>

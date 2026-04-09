@@ -1,4 +1,5 @@
-import { EmailSendResult, EmailTransportPayload } from '../domain/types';
+import { appConfig } from '@/config/appConfig';
+import { EmailCapability, EmailSendResult, EmailTransportPayload } from '../domain/types';
 import { summarizeEmailValidationIssues, validateTransportPayload } from '../domain/validation';
 
 interface SendApiSuccessResponse {
@@ -7,6 +8,22 @@ interface SendApiSuccessResponse {
   provider?: string;
   sentAt?: string;
 }
+
+interface CapabilityApiSuccessResponse {
+  ok: true;
+  canSend: boolean;
+  mode: 'smtp' | 'mock' | 'disabled';
+  reason?: string;
+  maxAttachmentBytes?: number;
+}
+
+interface CapabilityApiFailureResponse {
+  ok: false;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+type CapabilityApiResponse = CapabilityApiSuccessResponse | CapabilityApiFailureResponse;
 
 interface SendApiFailureResponse {
   ok: false;
@@ -67,6 +84,55 @@ export async function sendEmailTransport(payload: EmailTransportPayload): Promis
         code: 'NETWORK_ERROR',
         message: error instanceof Error ? error.message : 'Network request failed.',
       },
+    };
+  }
+}
+
+export async function fetchEmailCapability(): Promise<EmailCapability> {
+  if (!appConfig.features.emailEnabled) {
+    return {
+      canSend: false,
+      mode: 'disabled',
+      reason: 'Email feature is disabled by client configuration.',
+      source: 'fallback',
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const response = await fetch('/api/email/capabilities', {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    const body = (await response.json()) as CapabilityApiResponse;
+    if (!response.ok || !body.ok) {
+      return {
+        canSend: false,
+        mode: 'unknown',
+        reason: body.ok ? 'Email capability check failed.' : body.errorMessage ?? 'Email capability unavailable.',
+        source: 'server',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      canSend: body.canSend,
+      mode: body.mode,
+      reason: body.reason,
+      maxAttachmentBytes: body.maxAttachmentBytes,
+      source: 'server',
+      checkedAt: new Date().toISOString(),
+    };
+  } catch {
+    return {
+      canSend: false,
+      mode: 'unknown',
+      reason: 'Email API capability endpoint is unavailable in this environment.',
+      source: 'fallback',
+      checkedAt: new Date().toISOString(),
     };
   }
 }

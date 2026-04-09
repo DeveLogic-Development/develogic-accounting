@@ -1,53 +1,26 @@
 import nodemailer from 'nodemailer';
+import { getEmailCapabilities, getServerConfig, isRequestOriginAllowed } from '../_lib/config.js';
+import { validateEmailSendPayload } from '../_lib/email-validation.js';
 
-function isEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+function safeError(code, message, status = 400) {
+  return { code, message, status };
 }
 
-function validatePayload(payload) {
-  if (!payload || typeof payload !== 'object') return 'Payload is required.';
-  if (!payload.document || typeof payload.document !== 'object') return 'Document reference is required.';
-  if (!payload.recipient || typeof payload.recipient !== 'object') return 'Recipient details are required.';
-  if (!isEmail(payload.recipient.to)) return 'A valid recipient email is required.';
-  if (payload.recipient.cc && !isEmail(payload.recipient.cc)) return 'CC email is invalid.';
-  if (!String(payload.subject || '').trim()) return 'Subject is required.';
-  if (!String(payload.bodyText || '').trim()) return 'Email body is required.';
-  if (!payload.attachment || typeof payload.attachment !== 'object') return 'Attachment is required.';
-  if (!String(payload.attachment.fileName || '').trim()) return 'Attachment file name is required.';
-  if (!String(payload.attachment.contentBase64 || '').trim()) return 'Attachment content is required.';
-  return null;
+function buildFromAddress(smtp) {
+  return `"${smtp.fromName}" <${smtp.fromEmail}>`;
 }
 
-function buildFromAddress() {
-  const fromEmail = process.env.SMTP_FROM_EMAIL || 'no-reply@develogic.accounting.local';
-  const fromName = process.env.SMTP_FROM_NAME || 'DeveLogic Accounting';
-  return `"${fromName}" <${fromEmail}>`;
-}
-
-async function sendWithTransport(payload) {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const useMockTransport = process.env.EMAIL_TRANSPORT_MODE === 'mock' || !host;
-
-  if (useMockTransport) {
-    return {
-      provider: 'nodemailer-mock',
-      messageId: `mock-${Date.now()}`,
-      sentAt: new Date().toISOString(),
-    };
-  }
-
+async function sendWithNodemailer(config, payload) {
+  const smtp = config.email.smtp;
   const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: user && pass ? { user, pass } : undefined,
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.port === 465,
+    auth: smtp.user && smtp.pass ? { user: smtp.user, pass: smtp.pass } : undefined,
   });
 
-  const result = await transporter.sendMail({
-    from: buildFromAddress(),
+  const info = await transporter.sendMail({
+    from: buildFromAddress(smtp),
     to: payload.recipient.to,
     cc: payload.recipient.cc || undefined,
     subject: payload.subject,
@@ -57,15 +30,24 @@ async function sendWithTransport(payload) {
         filename: payload.attachment.fileName,
         content: payload.attachment.contentBase64,
         encoding: 'base64',
-        contentType: payload.attachment.mimeType || 'application/pdf',
+        contentType: payload.attachment.mimeType,
       },
     ],
   });
 
   return {
     provider: 'nodemailer',
-    messageId: result.messageId,
+    messageId: info.messageId,
     sentAt: new Date().toISOString(),
+  };
+}
+
+async function sendWithMock(payload) {
+  return {
+    provider: 'nodemailer-mock',
+    messageId: `mock-${Date.now()}`,
+    sentAt: new Date().toISOString(),
+    simulatedRecipient: payload.recipient.to,
   };
 }
 
@@ -79,29 +61,76 @@ export default async function handler(req, res) {
     return;
   }
 
-  const validationError = validatePayload(req.body);
-  if (validationError) {
+  const contentType = String(req.headers['content-type'] || '');
+  if (!contentType.toLowerCase().includes('application/json')) {
+    res.status(415).json({
+      ok: false,
+      errorCode: 'UNSUPPORTED_MEDIA_TYPE',
+      errorMessage: 'Content-Type must be application/json.',
+    });
+    return;
+  }
+
+  const config = getServerConfig();
+  if (!isRequestOriginAllowed(req, config)) {
+    res.status(403).json({
+      ok: false,
+      errorCode: 'ORIGIN_NOT_ALLOWED',
+      errorMessage: 'Request origin is not allowed for this endpoint.',
+    });
+    return;
+  }
+
+  const capabilities = getEmailCapabilities(config);
+  if (!capabilities.canSend) {
+    res.status(503).json({
+      ok: false,
+      errorCode: 'EMAIL_NOT_CONFIGURED',
+      errorMessage: capabilities.reason || 'Email transport is unavailable.',
+    });
+    return;
+  }
+
+  const validation = validateEmailSendPayload(req.body, config.email.maxAttachmentBytes);
+  if (!validation.ok) {
     res.status(400).json({
       ok: false,
       errorCode: 'INVALID_REQUEST',
-      errorMessage: validationError,
+      errorMessage: validation.error,
     });
     return;
   }
 
   try {
-    const result = await sendWithTransport(req.body);
+    const payload = validation.data;
+    const sendResult =
+      capabilities.mode === 'mock'
+        ? await sendWithMock(payload)
+        : await sendWithNodemailer(config, payload);
+
     res.status(200).json({
       ok: true,
-      provider: result.provider,
-      messageId: result.messageId,
-      sentAt: result.sentAt,
+      provider: sendResult.provider,
+      messageId: sendResult.messageId,
+      sentAt: sendResult.sentAt,
     });
   } catch (error) {
-    res.status(500).json({
+    const safeMessage =
+      config.runtime.isProductionLike
+        ? 'Email delivery failed. Please retry or check server email configuration.'
+        : error instanceof Error
+          ? error.message
+          : 'Failed to send email.';
+    const normalized = safeError(
+      'SMTP_SEND_FAILED',
+      safeMessage,
+      500,
+    );
+
+    res.status(normalized.status).json({
       ok: false,
-      errorCode: 'SMTP_SEND_FAILED',
-      errorMessage: error instanceof Error ? error.message : 'Failed to send email.',
+      errorCode: normalized.code,
+      errorMessage: normalized.message,
     });
   }
 }

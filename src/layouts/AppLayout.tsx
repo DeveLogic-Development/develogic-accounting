@@ -13,6 +13,7 @@ function breadcrumbsFromPath(pathname: string): string[] {
 function toTitleCase(value: string): string {
   return value
     .replace(/-/g, ' ')
+    .replace(/pdf/g, 'PDF')
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
@@ -48,7 +49,7 @@ export function AppLayout() {
       <div className="dl-main">
         <header className="dl-topbar">
           <div className="dl-search">
-            <Input placeholder="Search clients, quotes, invoices (coming soon)" aria-label="Global search" />
+            <Input placeholder="Search clients, quotes, and invoices (coming soon)" aria-label="Global search" />
           </div>
           <div className="dl-topbar-right">
             <IconButton icon="⟳" label="Sync" />
@@ -73,7 +74,7 @@ export function AppLayout() {
       <nav className="dl-bottom-nav" aria-label="Mobile navigation">
         {mobileNav.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
-            <span>{item.icon}</span>
+            <span aria-hidden>{item.icon}</span>
             <span>{item.label}</span>
           </NavLink>
         ))}

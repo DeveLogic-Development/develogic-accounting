@@ -1,7 +1,9 @@
+import { useEffect, useId } from 'react';
 import { Input } from '@/design-system/primitives/Input';
 import { Select } from '@/design-system/primitives/Select';
 import { Textarea } from '@/design-system/primitives/Textarea';
 import { Button } from '@/design-system/primitives/Button';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { EmailComposeDraft } from '../domain/types';
 
 interface AttachmentOption {
@@ -16,6 +18,8 @@ interface EmailComposeModalProps {
   attachmentOptions: AttachmentOption[];
   sending: boolean;
   message?: string | null;
+  messageTone?: InlineNoticeTone;
+  sendDisabledReason?: string;
   onClose: () => void;
   onChange: (draft: EmailComposeDraft) => void;
   onSend: () => void;
@@ -28,20 +32,44 @@ export function EmailComposeModal({
   attachmentOptions,
   sending,
   message,
+  messageTone = 'error',
+  sendDisabledReason,
   onClose,
   onChange,
   onSend,
 }: EmailComposeModalProps) {
+  const titleId = useId();
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (!open || event.key !== 'Escape' || sending) return;
+      onClose();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose, open, sending]);
+
   if (!open || !draft) return null;
 
   const hasArchivedAttachment = Boolean(draft.attachmentRecordId);
 
   return (
-    <div className="dl-modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="dl-modal">
+    <div
+      className="dl-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !sending) {
+          onClose();
+        }
+      }}
+    >
+      <div className="dl-modal" role="document">
         <header className="dl-modal-header">
           <div>
-            <h3 style={{ margin: 0 }}>{title}</h3>
+            <h3 id={titleId} style={{ margin: 0 }}>{title}</h3>
             <p className="dl-muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
               {draft.document.documentNumber} · {draft.document.clientName}
             </p>
@@ -126,19 +154,20 @@ export function EmailComposeModal({
           />
 
           {draft.resendOfLogId ? (
-            <div className="dl-validation-inline">
+            <InlineNotice tone="info">
               This is a resend of log #{draft.resendOfLogId}.
-            </div>
+            </InlineNotice>
           ) : null}
 
-          {message ? <div className="dl-validation-inline">{message}</div> : null}
+          {message ? <InlineNotice tone={messageTone}>{message}</InlineNotice> : null}
+          {sendDisabledReason ? <InlineNotice tone="warning">{sendDisabledReason}</InlineNotice> : null}
         </div>
 
         <footer className="dl-modal-footer">
           <Button variant="secondary" onClick={onClose} disabled={sending}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={onSend} disabled={sending}>
+          <Button variant="primary" onClick={onSend} disabled={sending || Boolean(sendDisabledReason)}>
             {sending ? 'Sending...' : 'Send Email'}
           </Button>
         </footer>

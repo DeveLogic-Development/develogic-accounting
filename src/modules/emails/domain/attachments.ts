@@ -25,19 +25,36 @@ function matchesDocument(record: PdfArchiveRecord, documentType: 'quote' | 'invo
   );
 }
 
+function isSendSafePdfRecord(record: PdfArchiveRecord): boolean {
+  return (
+    record.status === 'generated' &&
+    record.immutable &&
+    record.file.mimeType === 'application/pdf' &&
+    Boolean(record.file.dataUrl)
+  );
+}
+
 export async function resolveAttachmentRecordForSend(
   input: ResolveAttachmentInput,
 ): Promise<ResolveAttachmentResult> {
   if (input.resendAttachmentRecordId) {
     const resendRecord = input.getRecordById(input.resendAttachmentRecordId);
-    if (resendRecord && matchesDocument(resendRecord, input.documentType, input.documentId)) {
+    if (
+      resendRecord &&
+      matchesDocument(resendRecord, input.documentType, input.documentId) &&
+      isSendSafePdfRecord(resendRecord)
+    ) {
       return { ok: true, record: resendRecord };
     }
   }
 
   if (input.preferredRecordId) {
     const preferredRecord = input.getRecordById(input.preferredRecordId);
-    if (preferredRecord && matchesDocument(preferredRecord, input.documentType, input.documentId)) {
+    if (
+      preferredRecord &&
+      matchesDocument(preferredRecord, input.documentType, input.documentId) &&
+      isSendSafePdfRecord(preferredRecord)
+    ) {
       return { ok: true, record: preferredRecord };
     }
   }
@@ -47,6 +64,9 @@ export async function resolveAttachmentRecordForSend(
     documentId: input.documentId,
   });
   if (latestImmutable) {
+    if (!isSendSafePdfRecord(latestImmutable)) {
+      return { ok: false, error: 'Latest immutable PDF is invalid for sending.' };
+    }
     return { ok: true, record: latestImmutable };
   }
 
@@ -60,6 +80,9 @@ export async function resolveAttachmentRecordForSend(
 
   if (!matchesDocument(generated.data, input.documentType, input.documentId)) {
     return { ok: false, error: 'Generated PDF archive record does not match document reference.' };
+  }
+  if (!isSendSafePdfRecord(generated.data)) {
+    return { ok: false, error: 'Generated PDF archive record is invalid for sending.' };
   }
 
   return { ok: true, record: generated.data, generated: true };

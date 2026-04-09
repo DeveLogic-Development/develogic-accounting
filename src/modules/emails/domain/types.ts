@@ -83,6 +83,15 @@ export interface EmailSendResult {
   error?: EmailFailureReason;
 }
 
+export interface EmailCapability {
+  canSend: boolean;
+  mode: 'smtp' | 'mock' | 'disabled' | 'unknown';
+  reason?: string;
+  maxAttachmentBytes?: number;
+  checkedAt?: string;
+  source: 'server' | 'fallback';
+}
+
 export interface EmailLogRecord {
   id: string;
   status: EmailLogStatus;

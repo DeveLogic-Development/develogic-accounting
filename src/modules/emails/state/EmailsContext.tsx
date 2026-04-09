@@ -1,4 +1,5 @@
-import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { appConfig } from '@/config/appConfig';
 import { clients } from '@/mocks/data';
 import { Invoice, Quote } from '@/modules/accounting/domain/types';
 import { calculateDocumentTotals } from '@/modules/accounting/domain/calculations';
@@ -20,6 +21,7 @@ import {
 } from '../domain/templates';
 import { buildEmailTransportPayload } from '../domain/transport';
 import {
+  EmailCapability,
   EmailComposeDraft,
   EmailLogListRow,
   EmailLogRecord,
@@ -28,7 +30,7 @@ import {
 } from '../domain/types';
 import { summarizeEmailValidationIssues, validateComposeDraft } from '../domain/validation';
 import { derivePostSendInvoiceStatuses, derivePostSendQuoteStatus } from '../domain/workflow';
-import { sendEmailTransport } from '../services/client';
+import { fetchEmailCapability, sendEmailTransport } from '../services/client';
 
 interface ActionResult<T = undefined> {
   ok: boolean;
@@ -40,6 +42,11 @@ interface ActionResult<T = undefined> {
 interface EmailsContextValue {
   state: EmailsState;
   rows: EmailLogListRow[];
+  emailCapability: EmailCapability;
+  emailCapabilityLoading: boolean;
+  canSendEmails: boolean;
+  emailAvailabilityMessage?: string;
+  refreshEmailCapability: () => Promise<void>;
   getLogById: (logId: string) => EmailLogRecord | undefined;
   getLogsForDocument: (input: { documentType: 'quote' | 'invoice'; documentId: string }) => EmailLogRecord[];
   createComposeDraftForDocument: (
@@ -147,6 +154,16 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
   const accounting = useAccountingContext();
   const pdfArchive = usePdfArchiveContext();
   const [state, setState] = useState<EmailsState>(createInitialState);
+  const [emailCapability, setEmailCapability] = useState<EmailCapability>({
+    canSend: false,
+    mode: 'unknown',
+    reason: appConfig.features.emailEnabled
+      ? 'Checking email capability...'
+      : 'Email feature is disabled by configuration.',
+    checkedAt: new Date().toISOString(),
+    source: 'fallback',
+  });
+  const [emailCapabilityLoading, setEmailCapabilityLoading] = useState(true);
 
   const commit = (updater: (previous: EmailsState) => EmailsState) => {
     setState((previous) => {
@@ -186,9 +203,45 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
     [state.logs],
   );
 
+  const refreshEmailCapability = async () => {
+    if (!appConfig.features.emailEnabled) {
+      setEmailCapability({
+        canSend: false,
+        mode: 'disabled',
+        reason: 'Email feature is disabled by client configuration.',
+        checkedAt: new Date().toISOString(),
+        source: 'fallback',
+      });
+      setEmailCapabilityLoading(false);
+      return;
+    }
+
+    setEmailCapabilityLoading(true);
+    const capability = await fetchEmailCapability();
+    setEmailCapability(capability);
+    setEmailCapabilityLoading(false);
+  };
+
+  useEffect(() => {
+    refreshEmailCapability();
+  }, []);
+
+  const canSendEmails =
+    appConfig.features.emailEnabled &&
+    !emailCapabilityLoading &&
+    emailCapability.canSend;
+  const emailAvailabilityMessage = !appConfig.features.emailEnabled
+    ? 'Email feature is disabled in client configuration.'
+    : emailCapability.reason;
+
   const contextValue: EmailsContextValue = {
     state,
     rows,
+    emailCapability,
+    emailCapabilityLoading,
+    canSendEmails,
+    emailAvailabilityMessage,
+    refreshEmailCapability,
     getLogById: (logId) => state.logs.find((entry) => entry.id === logId),
     getLogsForDocument: ({ documentType, documentId }) =>
       state.logs
@@ -247,6 +300,13 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
       };
     },
     sendEmailDraft: async (draft) => {
+      if (!canSendEmails) {
+        return {
+          ok: false,
+          error: emailAvailabilityMessage ?? 'Email sending is currently unavailable.',
+        };
+      }
+
       const validation = validateComposeDraft(draft);
       if (!validation.isValid) {
         return {
@@ -304,6 +364,21 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
 
       const attachmentRecord = resolveResult.record;
       const attachment = mapPdfRecordToAttachmentReference(attachmentRecord);
+      if (
+        emailCapability.maxAttachmentBytes &&
+        attachmentRecord.file.sizeBytes > emailCapability.maxAttachmentBytes
+      ) {
+        const failed = markEmailLogFailed({
+          log: markEmailLogSending(queuedLog),
+          attachment,
+          attemptedAt: new Date().toISOString(),
+          code: 'ATTACHMENT_TOO_LARGE',
+          message: 'Attachment exceeds configured email size limit.',
+        });
+        replaceLog(queuedLog.id, () => failed);
+        return { ok: false, error: failed.errorMessage };
+      }
+
       const transportPayload = buildEmailTransportPayload({
         draft,
         attachmentRecord,

@@ -8,7 +8,7 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export function IconButton({ icon, label, className, ...props }: IconButtonProps) {
   return (
-    <button className={cn('dl-icon-btn', className)} aria-label={label} title={label} {...props}>
+    <button type="button" className={cn('dl-icon-btn', className)} aria-label={label} title={label} {...props}>
       <span aria-hidden>{icon}</span>
     </button>
   );

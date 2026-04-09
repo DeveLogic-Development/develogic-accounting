@@ -9,6 +9,7 @@ import { Select } from '@/design-system/primitives/Select';
 import { Textarea } from '@/design-system/primitives/Textarea';
 import { StickyActionBar } from '@/design-system/patterns/StickyActionBar';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { useTemplates } from '@/modules/templates/hooks/useTemplates';
 import { mapInvoiceToFormValues } from '@/modules/accounting/domain/mappers';
@@ -49,7 +50,7 @@ export function InvoiceFormPage() {
     existingInvoice ? mapInvoiceToFormValues(existingInvoice) : createDefaultInvoiceFormValues(),
   );
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const templateAssignments = useMemo(
@@ -130,7 +131,7 @@ export function InvoiceFormPage() {
     const result = validateInvoiceForm(values);
     setIssues(result.issues);
     if (!result.isValid) {
-      setMessage('Please resolve validation errors before continuing.');
+      setNotice({ tone: 'error', text: 'Please resolve validation errors before continuing.' });
     }
     return result.isValid;
   };
@@ -141,21 +142,21 @@ export function InvoiceFormPage() {
     if (isEdit && existingInvoice) {
       const result = updateInvoice(existingInvoice.id, values);
       if (result.ok && result.data) {
-        setMessage('Invoice draft saved.');
+        setNotice({ tone: 'success', text: 'Invoice draft saved.' });
         return result.data.id;
       }
 
-      setMessage(result.error ?? 'Unable to save invoice.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to save invoice.' });
       return null;
     }
 
     const result = createInvoice(values);
     if (result.ok && result.data) {
-      setMessage('Invoice draft created.');
+      setNotice({ tone: 'success', text: 'Invoice draft created.' });
       return result.data.id;
     }
 
-    setMessage(result.error ?? 'Unable to create invoice.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to create invoice.' });
     return null;
   };
 
@@ -172,13 +173,13 @@ export function InvoiceFormPage() {
 
     const approveResult = transitionInvoice(invoiceIdentifier, 'approved');
     if (!approveResult.ok) {
-      setMessage(approveResult.error ?? 'Unable to approve invoice before sending.');
+      setNotice({ tone: 'error', text: approveResult.error ?? 'Unable to approve invoice before sending.' });
       return;
     }
 
     const sendResult = transitionInvoice(invoiceIdentifier, 'sent');
     if (!sendResult.ok) {
-      setMessage(sendResult.error ?? 'Unable to mark invoice as sent.');
+      setNotice({ tone: 'error', text: sendResult.error ?? 'Unable to mark invoice as sent.' });
       return;
     }
 
@@ -193,12 +194,12 @@ export function InvoiceFormPage() {
       return;
     }
 
-    setMessage(result.error ?? 'Unable to duplicate invoice.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to duplicate invoice.' });
   };
 
   const handleGenerateDraftPdf = async () => {
     if (!existingInvoice) {
-      setMessage('Save this invoice first, then generate a draft PDF from edit mode.');
+      setNotice({ tone: 'warning', text: 'Save this invoice first, then generate a draft PDF from edit mode.' });
       return;
     }
 
@@ -210,11 +211,11 @@ export function InvoiceFormPage() {
     setIsGeneratingPdf(false);
 
     if (result.ok && result.data) {
-      setMessage(`Draft PDF generated: ${result.data.file.fileName}`);
+      setNotice({ tone: 'success', text: `Draft PDF generated: ${result.data.file.fileName}` });
       return;
     }
 
-    setMessage(result.error ?? 'Unable to generate invoice PDF.');
+    setNotice({ tone: 'error', text: result.error ?? 'Unable to generate invoice PDF.' });
   };
 
   return (
@@ -239,7 +240,7 @@ export function InvoiceFormPage() {
                 Save Draft
               </Button>
               <Button variant="primary" onClick={handleSendInvoice}>
-                Save, Approve & Send
+                Save, Approve, and Send
               </Button>
             </>
           ) : (
@@ -248,7 +249,7 @@ export function InvoiceFormPage() {
         }
       />
 
-      {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
       <FormValidationSummary issues={issues} />
 
       <div className="dl-split-layout">
@@ -362,7 +363,7 @@ export function InvoiceFormPage() {
                 Save Draft
               </Button>
               <Button variant="primary" onClick={handleSendInvoice} disabled={!editable}>
-                Save, Approve & Send
+                Save, Approve, and Send
               </Button>
               {isEdit ? (
                 <Button variant="ghost" onClick={handleGenerateDraftPdf} disabled={!editable || isGeneratingPdf}>
@@ -383,7 +384,7 @@ export function InvoiceFormPage() {
             Save Draft
           </Button>
           <Button variant="primary" onClick={handleSendInvoice}>
-            Save, Approve & Send
+            Save, Approve, and Send
           </Button>
         </StickyActionBar>
       ) : null}

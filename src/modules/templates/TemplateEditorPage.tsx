@@ -9,6 +9,7 @@ import { Select } from '@/design-system/primitives/Select';
 import { Textarea } from '@/design-system/primitives/Textarea';
 import { Toggle } from '@/design-system/primitives/Toggle';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { TemplatePreviewRenderer } from './components/TemplatePreviewRenderer';
 import { TEMPLATE_PRESETS, createDefaultTemplateConfigForType, createTemplateFromPreset } from './domain/defaults';
 import { createInvoiceTemplatePreviewPayload, createQuoteTemplatePreviewPayload } from './domain/sample-preview';
@@ -51,7 +52,7 @@ export function TemplateEditorPage() {
   const [changeNote, setChangeNote] = useState('');
   const [logoUrlInput, setLogoUrlInput] = useState('');
   const [logoNameInput, setLogoNameInput] = useState('Uploaded Logo');
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
 
   useEffect(() => {
     if (isCreateMode) {
@@ -114,11 +115,11 @@ export function TemplateEditorPage() {
         preset: presetRef,
       });
       if (!result.ok || !result.data) {
-        setMessage(result.error ?? 'Unable to create template.');
+        setNotice({ tone: 'error', text: result.error ?? 'Unable to create template.' });
         return;
       }
 
-      setMessage('Template draft created.');
+      setNotice({ tone: 'success', text: 'Template draft created.' });
       navigate(`/templates/${result.data.id}/editor`);
       return;
     }
@@ -132,7 +133,10 @@ export function TemplateEditorPage() {
       description: templateDescription,
     });
 
-    setMessage(result.ok ? 'Template draft saved.' : result.error ?? 'Unable to save template draft.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? 'Template draft saved.' : result.error ?? 'Unable to save template draft.',
+    });
   };
 
   const handlePublish = () => {
@@ -147,16 +151,17 @@ export function TemplateEditorPage() {
         preset: presetRef,
       });
       if (!createResult.ok || !createResult.data) {
-        setMessage(createResult.error ?? 'Unable to create template.');
+        setNotice({ tone: 'error', text: createResult.error ?? 'Unable to create template.' });
         return;
       }
 
       const publishResult = publishTemplate(createResult.data.id, changeNote || 'Initial template publish');
-      setMessage(
-        publishResult.ok
+      setNotice({
+        tone: publishResult.ok ? 'success' : 'error',
+        text: publishResult.ok
           ? 'Template published.'
           : publishResult.error ?? 'Unable to publish template.',
-      );
+      });
       navigate(`/templates/${createResult.data.id}/editor`);
       return;
     }
@@ -171,23 +176,24 @@ export function TemplateEditorPage() {
     });
 
     if (!draftResult.ok) {
-      setMessage(draftResult.error ?? 'Unable to save draft before publish.');
+      setNotice({ tone: 'error', text: draftResult.error ?? 'Unable to save draft before publish.' });
       return;
     }
 
     const publishResult = publishTemplate(templateId, changeNote || 'Published from editor');
-    setMessage(
-      publishResult.ok
+    setNotice({
+      tone: publishResult.ok ? 'success' : 'error',
+      text: publishResult.ok
         ? 'Template published successfully.'
         : publishResult.error ?? 'Unable to publish template.',
-    );
+    });
   };
 
   const handleDuplicate = () => {
     if (!templateId || isCreateMode) return;
     const result = duplicateTemplate(templateId);
     if (!result.ok || !result.data) {
-      setMessage(result.error ?? 'Unable to duplicate template.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to duplicate template.' });
       return;
     }
 
@@ -197,7 +203,10 @@ export function TemplateEditorPage() {
   const handleArchive = () => {
     if (!templateId || isCreateMode) return;
     const result = archiveTemplate(templateId);
-    setMessage(result.ok ? 'Template archived.' : result.error ?? 'Unable to archive template.');
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok ? 'Template archived.' : result.error ?? 'Unable to archive template.',
+    });
   };
 
   const handleLogoUrlSave = () => {
@@ -207,7 +216,7 @@ export function TemplateEditorPage() {
       url: logoUrlInput.trim(),
     });
     if (!result.ok || !result.data) {
-      setMessage(result.error ?? 'Unable to save logo.');
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to save logo.' });
       return;
     }
 
@@ -219,7 +228,7 @@ export function TemplateEditorPage() {
         logoUrl: result.data?.url,
       },
     }));
-    setMessage('Logo saved and assigned to template branding.');
+    setNotice({ tone: 'success', text: 'Logo saved and assigned to template branding.' });
     setLogoUrlInput('');
   };
 
@@ -234,7 +243,7 @@ export function TemplateEditorPage() {
         url: String(reader.result),
       });
       if (!result.ok || !result.data) {
-        setMessage(result.error ?? 'Unable to save uploaded logo.');
+        setNotice({ tone: 'error', text: result.error ?? 'Unable to save uploaded logo.' });
         return;
       }
 
@@ -246,7 +255,7 @@ export function TemplateEditorPage() {
           logoUrl: result.data?.url,
         },
       }));
-      setMessage('Uploaded logo assigned.');
+      setNotice({ tone: 'success', text: 'Uploaded logo assigned.' });
     };
 
     reader.readAsDataURL(file);
@@ -277,7 +286,7 @@ export function TemplateEditorPage() {
         }
       />
 
-      {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
       <TemplateBuilderLayout
         leftPanel={
