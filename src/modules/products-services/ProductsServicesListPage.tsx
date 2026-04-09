@@ -10,23 +10,34 @@ import { ResponsiveList } from '@/design-system/patterns/ResponsiveList';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { Badge } from '@/design-system/primitives/Badge';
 import { formatCurrency } from '@/utils/format';
+import { matchesSearchText } from '@/modules/insights/domain/filters';
 
 export function ProductsServicesListPage() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState<'all' | 'product' | 'service'>('all');
+  const [activeState, setActiveState] = useState<'all' | 'active' | 'inactive'>('all');
+  const [sort, setSort] = useState<'usage_desc' | 'price_desc' | 'name_asc'>('usage_desc');
 
   const filtered = useMemo(
-    () =>
-      productsServices.filter((entry) => {
+    () => {
+      const rows = productsServices.filter((entry) => {
         const typeMatch = type === 'all' || entry.type === type;
-        const searchMatch =
-          search.trim().length === 0 ||
-          [entry.name, entry.sku, entry.description].some((field) =>
-            field.toLowerCase().includes(search.toLowerCase()),
-          );
-        return typeMatch && searchMatch;
-      }),
-    [search, type],
+        const activeMatch =
+          activeState === 'all' ||
+          (activeState === 'active' && entry.isActive) ||
+          (activeState === 'inactive' && !entry.isActive);
+        const searchMatch = matchesSearchText(search, [entry.name, entry.sku, entry.description]);
+        return typeMatch && activeMatch && searchMatch;
+      });
+
+      rows.sort((a, b) => {
+        if (sort === 'price_desc') return b.unitPrice - a.unitPrice;
+        if (sort === 'name_asc') return a.name.localeCompare(b.name);
+        return b.usageCount - a.usageCount;
+      });
+      return rows;
+    },
+    [activeState, search, sort, type],
   );
 
   return (
@@ -50,6 +61,16 @@ export function ProductsServicesListPage() {
           style={{ width: 'min(340px, 100%)' }}
         />
         <Select
+          value={activeState}
+          onChange={(event) => setActiveState(event.target.value as 'all' | 'active' | 'inactive')}
+          options={[
+            { label: 'All availability', value: 'all' },
+            { label: 'Active only', value: 'active' },
+            { label: 'Inactive only', value: 'inactive' },
+          ]}
+          style={{ width: 180 }}
+        />
+        <Select
           value={type}
           onChange={(event) => setType(event.target.value as 'all' | 'product' | 'service')}
           options={[
@@ -59,7 +80,16 @@ export function ProductsServicesListPage() {
           ]}
           style={{ width: 160 }}
         />
-        <Button size="sm">Sort: Most Used</Button>
+        <Select
+          value={sort}
+          onChange={(event) => setSort(event.target.value as 'usage_desc' | 'price_desc' | 'name_asc')}
+          options={[
+            { label: 'Sort: Most Used', value: 'usage_desc' },
+            { label: 'Sort: Price High', value: 'price_desc' },
+            { label: 'Sort: Name A-Z', value: 'name_asc' },
+          ]}
+          style={{ width: 180 }}
+        />
       </FilterBar>
 
       {filtered.length === 0 ? (

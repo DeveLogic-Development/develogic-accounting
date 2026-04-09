@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/layouts/AppLayout';
 import { NotFoundPage } from '@/layouts/NotFoundPage';
 import { DashboardPage } from '@/modules/dashboard/DashboardPage';
+import { ReportsPage } from '@/modules/reports/ReportsPage';
 import { ClientsListPage } from '@/modules/clients/ClientsListPage';
 import { ClientDetailPage } from '@/modules/clients/ClientDetailPage';
 import { ProductsServicesListPage } from '@/modules/products-services/ProductsServicesListPage';
@@ -26,6 +27,7 @@ export function AppRouter() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="reports" element={<ReportsPage />} />
 
           <Route path="clients" element={<ClientsListPage />} />
           <Route path="clients/:clientId" element={<ClientDetailPage />} />

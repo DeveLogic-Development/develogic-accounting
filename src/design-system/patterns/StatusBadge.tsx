@@ -9,9 +9,11 @@ import {
   InvoiceStatus as DomainInvoiceStatus,
   QuoteStatus as DomainQuoteStatus,
 } from '@/modules/accounting/domain/types';
+import { EmailLogStatus } from '@/modules/emails/domain/types';
 
 type QuoteStatus = LegacyQuoteStatus | DomainQuoteStatus;
 type InvoiceStatus = LegacyInvoiceStatus | DomainInvoiceStatus;
+type EmailStatusValue = EmailStatus | EmailLogStatus;
 
 function getQuoteVariant(status: QuoteStatus): BadgeVariant {
   switch (status) {
@@ -61,11 +63,14 @@ function getTemplateVariant(status: TemplateStatus): BadgeVariant {
   }
 }
 
-function getEmailVariant(status: EmailStatus): BadgeVariant {
+function getEmailVariant(status: EmailStatusValue): BadgeVariant {
   switch (status) {
     case 'sent':
       return 'success';
+    case 'sending':
+      return 'info';
     case 'failed':
+    case 'cancelled':
     case 'bounced':
       return 'danger';
     default:
@@ -93,6 +98,6 @@ export function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   return <Badge variant={getTemplateVariant(status)}>{prettyLabel(status)}</Badge>;
 }
 
-export function EmailStatusBadge({ status }: { status: EmailStatus }) {
+export function EmailStatusBadge({ status }: { status: EmailStatusValue }) {
   return <Badge variant={getEmailVariant(status)}>{prettyLabel(status)}</Badge>;
 }

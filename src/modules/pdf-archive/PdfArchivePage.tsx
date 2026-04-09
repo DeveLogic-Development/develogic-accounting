@@ -11,6 +11,7 @@ import { Button } from '@/design-system/primitives/Button';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
 import { PdfArchiveListRow, PdfArchiveRecord, PdfGenerationMode } from '@/modules/pdf/domain/types';
+import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
 
 function matchesGenerationMode(modeFilter: string, mode: PdfGenerationMode): boolean {
   return modeFilter === 'all' || modeFilter === mode;
@@ -34,26 +35,36 @@ export function PdfArchivePage() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('all');
   const [mode, setMode] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sort, setSort] = useState<'generated_desc' | 'generated_asc'>('generated_desc');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<string | null>(null);
 
   const filtered = useMemo(
-    () =>
-      rows.filter((entry) => {
+    () => {
+      const filteredRows = rows.filter((entry) => {
         const typeMatch = type === 'all' || entry.documentType === type;
         const modeMatch = matchesGenerationMode(mode, entry.generationMode);
-        const searchMatch =
-          search.trim().length === 0 ||
-          [
-            entry.documentNumber,
-            entry.clientName,
-            entry.templateName,
-            entry.fileName,
-            entry.checksum,
-          ].some((field) => field.toLowerCase().includes(search.toLowerCase()));
-        return typeMatch && modeMatch && searchMatch;
-      }),
-    [mode, rows, search, type],
+        const dateMatch = matchesDateRange(entry.generatedAt, dateFrom || undefined, dateTo || undefined);
+        const searchMatch = matchesSearchText(search, [
+          entry.documentNumber,
+          entry.clientName,
+          entry.templateName,
+          entry.fileName,
+          entry.checksum,
+        ]);
+        return typeMatch && modeMatch && dateMatch && searchMatch;
+      });
+
+      filteredRows.sort((a, b) => {
+        if (sort === 'generated_asc') return a.generatedAt.localeCompare(b.generatedAt);
+        return b.generatedAt.localeCompare(a.generatedAt);
+      });
+
+      return filteredRows;
+    },
+    [dateFrom, dateTo, mode, rows, search, sort, type],
   );
 
   useEffect(() => {
@@ -110,6 +121,27 @@ export function PdfArchivePage() {
             { label: 'Invoices', value: 'invoice' },
           ]}
           style={{ width: 180 }}
+        />
+        <Select
+          value={sort}
+          onChange={(event) => setSort(event.target.value as 'generated_desc' | 'generated_asc')}
+          options={[
+            { label: 'Sort: Newest', value: 'generated_desc' },
+            { label: 'Sort: Oldest', value: 'generated_asc' },
+          ]}
+          style={{ width: 180 }}
+        />
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={(event) => setDateFrom(event.target.value)}
+          style={{ width: 170 }}
+        />
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={(event) => setDateTo(event.target.value)}
+          style={{ width: 170 }}
         />
         <Select
           value={mode}

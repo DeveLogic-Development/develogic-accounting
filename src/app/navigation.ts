@@ -14,6 +14,7 @@ export const sidebarNav: NavGroup[] = [
     label: 'Core',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: '▦' },
+      { to: '/reports', label: 'Reports', icon: '📊' },
       { to: '/clients', label: 'Clients', icon: '👥' },
       { to: '/products-services', label: 'Products & Services', icon: '📦' },
       { to: '/quotes', label: 'Quotes', icon: '🧾' },
@@ -39,8 +40,9 @@ export const sidebarNav: NavGroup[] = [
 
 export const mobileNav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: '▦' },
+  { to: '/reports', label: 'Reports', icon: '📊' },
   { to: '/clients', label: 'Clients', icon: '👥' },
   { to: '/quotes', label: 'Quotes', icon: '🧾' },
   { to: '/invoices', label: 'Invoices', icon: '💼' },
-  { to: '/templates', label: 'More', icon: '⋯' },
+  { to: '/templates', label: 'Templates', icon: '⋯' },
 ];

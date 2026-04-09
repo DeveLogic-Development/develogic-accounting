@@ -5,7 +5,7 @@ import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
-import { QuoteStatusBadge } from '@/design-system/patterns/StatusBadge';
+import { EmailStatusBadge, QuoteStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { formatBytes, formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { useTemplates } from '@/modules/templates/hooks/useTemplates';
@@ -17,6 +17,9 @@ import {
 import { DocumentLineItemsTable } from '@/modules/accounting/components/DocumentLineItemsTable';
 import { DocumentStatusTimeline } from '@/modules/accounting/components/DocumentStatusTimeline';
 import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
+import { useEmails } from '@/modules/emails/hooks/useEmails';
+import { EmailComposeModal } from '@/modules/emails/components/EmailComposeModal';
+import { EmailComposeDraft } from '@/modules/emails/domain/types';
 
 const QUICK_ACTION_TRANSITIONS: Array<{
   status: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired';
@@ -40,8 +43,16 @@ export function QuoteDetailPage() {
     openPdfRecord,
     downloadPdfRecord,
   } = usePdfArchive();
+  const {
+    getLogsForDocument,
+    createComposeDraftForDocument,
+    sendEmailDraft,
+  } = useEmails();
   const [message, setMessage] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeDraft, setComposeDraft] = useState<EmailComposeDraft | null>(null);
 
   const quote = quoteId ? getQuoteById(quoteId) : undefined;
 
@@ -69,10 +80,20 @@ export function QuoteDetailPage() {
   const latestPdf = pdfRecords[0];
   const latestImmutablePdf = pdfRecords.find((record) => record.immutable);
   const latestDraftPdf = pdfRecords.find((record) => !record.immutable);
+  const emailLogs = getLogsForDocument({ documentType: 'quote', documentId: quote.id });
+  const recentEmailLogs = emailLogs.slice(0, 3);
 
   const availableTransitionButtons = useMemo(
     () => QUICK_ACTION_TRANSITIONS.filter((entry) => transitions.includes(entry.status)),
     [transitions],
+  );
+  const attachmentOptions = useMemo(
+    () =>
+      pdfRecords.map((record) => ({
+        value: record.id,
+        label: `v${record.revision} · ${record.file.fileName} ${record.immutable ? '(Immutable)' : '(Draft)'}`,
+      })),
+    [pdfRecords],
   );
 
   const handleTransition = (target: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired') => {
@@ -155,6 +176,33 @@ export function QuoteDetailPage() {
     setMessage(result.ok ? 'PDF download started.' : result.error ?? 'Unable to download PDF.');
   };
 
+  const handleOpenSendDialog = () => {
+    const result = createComposeDraftForDocument({ documentType: 'quote', documentId: quote.id });
+    if (!result.ok || !result.data) {
+      setMessage(result.error ?? 'Unable to prepare email draft.');
+      return;
+    }
+
+    setComposeDraft(result.data);
+    setComposeOpen(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!composeDraft) return;
+    setIsSendingEmail(true);
+    const result = await sendEmailDraft(composeDraft);
+    setIsSendingEmail(false);
+
+    if (!result.ok) {
+      setMessage(result.error ?? 'Unable to send quote email.');
+      return;
+    }
+
+    setComposeOpen(false);
+    setComposeDraft(null);
+    setMessage(result.warning ?? 'Quote email sent successfully.');
+  };
+
   return (
     <>
       <PageHeader
@@ -169,6 +217,9 @@ export function QuoteDetailPage() {
             ) : null}
             <Button type="button" onClick={handleDuplicate}>
               Duplicate
+            </Button>
+            <Button type="button" variant="primary" onClick={handleOpenSendDialog}>
+              Send Quote Email
             </Button>
             {quote.status === 'draft' ? (
               <Button type="button" variant="secondary" onClick={handleGenerateDraftPdf} disabled={isGeneratingPdf}>
@@ -286,8 +337,61 @@ export function QuoteDetailPage() {
       </div>
 
       <div style={{ marginTop: 16 }}>
+        <Card title="Email Delivery" subtitle="Send attempts and outcomes for this quote">
+          {recentEmailLogs.length === 0 ? (
+            <p className="dl-muted" style={{ margin: 0 }}>
+              No email sends recorded yet.
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {recentEmailLogs.map((entry) => (
+                <div key={entry.id} style={{ borderBottom: '1px solid var(--border-default)', paddingBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <strong>{entry.recipient.to}</strong>
+                    <EmailStatusBadge status={entry.status} />
+                  </div>
+                  <div className="dl-muted" style={{ fontSize: 12 }}>
+                    {entry.subject} · {formatDate(entry.sentAt ?? entry.attemptedAt)}
+                  </div>
+                  {entry.errorMessage ? (
+                    <div className="dl-muted" style={{ fontSize: 12 }}>
+                      Error: {entry.errorMessage}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              <div className="dl-inline-actions">
+                <Button size="sm" onClick={handleOpenSendDialog}>
+                  Compose & Send
+                </Button>
+                <Link to="/emails/history">
+                  <Button size="sm" variant="secondary">
+                    Open Email History
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
         <DocumentStatusTimeline entries={quote.statusHistory} title="Quote Timeline" />
       </div>
+
+      <EmailComposeModal
+        open={composeOpen}
+        title="Send Quote Email"
+        draft={composeDraft}
+        attachmentOptions={attachmentOptions}
+        sending={isSendingEmail}
+        onClose={() => {
+          setComposeOpen(false);
+          setComposeDraft(null);
+        }}
+        onChange={(draft) => setComposeDraft(draft)}
+        onSend={handleSendEmail}
+      />
     </>
   );
 }

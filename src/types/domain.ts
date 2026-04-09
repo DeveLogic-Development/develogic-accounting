@@ -18,7 +18,7 @@ export type InvoiceStatus =
   | 'void';
 
 export type TemplateStatus = 'draft' | 'published' | 'archived';
-export type EmailStatus = 'sent' | 'failed' | 'queued' | 'bounced';
+export type EmailStatus = 'sent' | 'failed' | 'queued' | 'sending' | 'cancelled' | 'bounced';
 
 export interface ActivityEvent {
   id: string;

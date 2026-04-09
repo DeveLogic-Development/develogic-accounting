@@ -11,6 +11,7 @@ import { InvoiceStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
+import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
 
 export function InvoicesListPage() {
   const navigate = useNavigate();
@@ -18,7 +19,12 @@ export function InvoicesListPage() {
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  const [clientId, setClientId] = useState('all');
+  const [issueDateFrom, setIssueDateFrom] = useState('');
+  const [issueDateTo, setIssueDateTo] = useState('');
   const [dueBefore, setDueBefore] = useState('');
+  const [segment, setSegment] = useState<'all' | 'unpaid' | 'overdue'>('all');
+  const [sort, setSort] = useState<'due_asc' | 'due_desc' | 'outstanding_desc' | 'issue_desc'>('due_asc');
   const [message, setMessage] = useState<string | null>(null);
 
   const clientNameById = useMemo(
@@ -27,21 +33,48 @@ export function InvoicesListPage() {
   );
 
   const filtered = useMemo(
-    () =>
-      invoiceSummaries.filter((invoice) => {
+    () => {
+      const rows = invoiceSummaries.filter((invoice) => {
         const statusMatch = status === 'all' || invoice.status === status;
+        const clientMatch = clientId === 'all' || invoice.clientId === clientId;
+        const issueDateMatch = matchesDateRange(
+          invoice.issueDate,
+          issueDateFrom || undefined,
+          issueDateTo || undefined,
+        );
         const dueMatch = dueBefore.length === 0 || invoice.dueDate <= dueBefore;
+        const segmentMatch =
+          segment === 'all' ||
+          (segment === 'overdue' && invoice.status === 'overdue') ||
+          (segment === 'unpaid' && invoice.outstandingMinor > 0);
         const clientName = clientNameById.get(invoice.clientId) ?? 'Unknown client';
 
-        const searchMatch =
-          search.trim().length === 0 ||
-          [invoice.invoiceNumber, clientName, invoice.status].some((field) =>
-            field.toLowerCase().includes(search.toLowerCase()),
-          );
+        const searchMatch = matchesSearchText(search, [invoice.invoiceNumber, clientName, invoice.status]);
 
-        return statusMatch && dueMatch && searchMatch;
-      }),
-    [clientNameById, dueBefore, invoiceSummaries, search, status],
+        return statusMatch && clientMatch && issueDateMatch && dueMatch && segmentMatch && searchMatch;
+      });
+
+      rows.sort((a, b) => {
+        if (sort === 'due_desc') return b.dueDate.localeCompare(a.dueDate);
+        if (sort === 'outstanding_desc') return b.outstandingMinor - a.outstandingMinor;
+        if (sort === 'issue_desc') return b.issueDate.localeCompare(a.issueDate);
+        return a.dueDate.localeCompare(b.dueDate);
+      });
+
+      return rows;
+    },
+    [
+      clientNameById,
+      clientId,
+      dueBefore,
+      invoiceSummaries,
+      issueDateFrom,
+      issueDateTo,
+      search,
+      segment,
+      sort,
+      status,
+    ],
   );
 
   const overdueCount = invoiceSummaries.filter((invoice) => invoice.status === 'overdue').length;
@@ -80,11 +113,30 @@ export function InvoicesListPage() {
       {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
 
       <FilterBar>
+        <Select
+          value={segment}
+          onChange={(event) => setSegment(event.target.value as 'all' | 'unpaid' | 'overdue')}
+          options={[
+            { label: 'All Segments', value: 'all' },
+            { label: 'Unpaid', value: 'unpaid' },
+            { label: 'Overdue', value: 'overdue' },
+          ]}
+          style={{ width: 180 }}
+        />
         <Input
           placeholder="Search invoice number, client, or status"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(360px, 100%)' }}
+        />
+        <Select
+          value={clientId}
+          onChange={(event) => setClientId(event.target.value)}
+          options={[
+            { label: 'All clients', value: 'all' },
+            ...clients.map((client) => ({ label: client.name, value: client.id })),
+          ]}
+          style={{ width: 220 }}
         />
         <Select
           value={status}
@@ -103,9 +155,34 @@ export function InvoicesListPage() {
         />
         <Input
           type="date"
+          value={issueDateFrom}
+          onChange={(event) => setIssueDateFrom(event.target.value)}
+          style={{ width: 170 }}
+        />
+        <Input
+          type="date"
+          value={issueDateTo}
+          onChange={(event) => setIssueDateTo(event.target.value)}
+          style={{ width: 170 }}
+        />
+        <Input
+          type="date"
           value={dueBefore}
           onChange={(event) => setDueBefore(event.target.value)}
           style={{ width: 180 }}
+        />
+        <Select
+          value={sort}
+          onChange={(event) =>
+            setSort(event.target.value as 'due_asc' | 'due_desc' | 'outstanding_desc' | 'issue_desc')
+          }
+          options={[
+            { label: 'Sort: Due Date (Oldest)', value: 'due_asc' },
+            { label: 'Sort: Due Date (Newest)', value: 'due_desc' },
+            { label: 'Sort: Outstanding (High)', value: 'outstanding_desc' },
+            { label: 'Sort: Issue Date (Newest)', value: 'issue_desc' },
+          ]}
+          style={{ width: 240 }}
         />
       </FilterBar>
 

@@ -5,7 +5,7 @@ import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
-import { InvoiceStatusBadge } from '@/design-system/patterns/StatusBadge';
+import { EmailStatusBadge, InvoiceStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { formatBytes, formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { useTemplates } from '@/modules/templates/hooks/useTemplates';
@@ -18,6 +18,9 @@ import { DocumentLineItemsTable } from '@/modules/accounting/components/Document
 import { DocumentStatusTimeline } from '@/modules/accounting/components/DocumentStatusTimeline';
 import { RecordPaymentForm } from '@/modules/accounting/components/RecordPaymentForm';
 import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
+import { useEmails } from '@/modules/emails/hooks/useEmails';
+import { EmailComposeModal } from '@/modules/emails/components/EmailComposeModal';
+import { EmailComposeDraft } from '@/modules/emails/domain/types';
 
 export function InvoiceDetailPage() {
   const navigate = useNavigate();
@@ -37,10 +40,18 @@ export function InvoiceDetailPage() {
     openPdfRecord,
     downloadPdfRecord,
   } = usePdfArchive();
+  const {
+    getLogsForDocument,
+    createComposeDraftForDocument,
+    sendEmailDraft,
+  } = useEmails();
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeDraft, setComposeDraft] = useState<EmailComposeDraft | null>(null);
 
   const invoice = invoiceId ? getInvoiceById(invoiceId) : undefined;
 
@@ -73,6 +84,8 @@ export function InvoiceDetailPage() {
   const latestPdf = pdfRecords[0];
   const latestImmutablePdf = pdfRecords.find((record) => record.immutable);
   const latestDraftPdf = pdfRecords.find((record) => !record.immutable);
+  const emailLogs = getLogsForDocument({ documentType: 'invoice', documentId: invoice.id });
+  const recentEmailLogs = emailLogs.slice(0, 3);
 
   const canRecordPayment = invoice.status !== 'void' && invoice.status !== 'draft' && outstandingMinor > 0;
 
@@ -83,6 +96,14 @@ export function InvoiceDetailPage() {
         label: status === 'approved' ? 'Approve/Open' : status === 'void' ? 'Void Invoice' : 'Mark Sent',
       })),
     [transitions],
+  );
+  const attachmentOptions = useMemo(
+    () =>
+      pdfRecords.map((record) => ({
+        value: record.id,
+        label: `v${record.revision} · ${record.file.fileName} ${record.immutable ? '(Immutable)' : '(Draft)'}`,
+      })),
+    [pdfRecords],
   );
 
   const handleTransition = (target: 'approved' | 'sent' | 'void') => {
@@ -167,6 +188,33 @@ export function InvoiceDetailPage() {
     setMessage(result.ok ? 'PDF download started.' : result.error ?? 'Unable to download PDF.');
   };
 
+  const handleOpenSendDialog = () => {
+    const result = createComposeDraftForDocument({ documentType: 'invoice', documentId: invoice.id });
+    if (!result.ok || !result.data) {
+      setMessage(result.error ?? 'Unable to prepare email draft.');
+      return;
+    }
+
+    setComposeDraft(result.data);
+    setComposeOpen(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!composeDraft) return;
+    setIsSendingEmail(true);
+    const result = await sendEmailDraft(composeDraft);
+    setIsSendingEmail(false);
+
+    if (!result.ok) {
+      setMessage(result.error ?? 'Unable to send invoice email.');
+      return;
+    }
+
+    setComposeOpen(false);
+    setComposeDraft(null);
+    setMessage(result.warning ?? 'Invoice email sent successfully.');
+  };
+
   return (
     <>
       <PageHeader
@@ -181,6 +229,9 @@ export function InvoiceDetailPage() {
             ) : null}
             <Button type="button" onClick={handleDuplicate}>
               Duplicate
+            </Button>
+            <Button type="button" variant="primary" onClick={handleOpenSendDialog}>
+              Send Invoice Email
             </Button>
             {invoice.status === 'draft' ? (
               <Button type="button" variant="secondary" onClick={handleGenerateDraftPdf} disabled={isGeneratingPdf}>
@@ -312,6 +363,45 @@ export function InvoiceDetailPage() {
         </Card>
       </div>
 
+      <div style={{ marginTop: 16 }}>
+        <Card title="Email Delivery" subtitle="Send attempts and outcomes for this invoice">
+          {recentEmailLogs.length === 0 ? (
+            <p className="dl-muted" style={{ margin: 0 }}>
+              No email sends recorded yet.
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {recentEmailLogs.map((entry) => (
+                <div key={entry.id} style={{ borderBottom: '1px solid var(--border-default)', paddingBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <strong>{entry.recipient.to}</strong>
+                    <EmailStatusBadge status={entry.status} />
+                  </div>
+                  <div className="dl-muted" style={{ fontSize: 12 }}>
+                    {entry.subject} · {formatDate(entry.sentAt ?? entry.attemptedAt)}
+                  </div>
+                  {entry.errorMessage ? (
+                    <div className="dl-muted" style={{ fontSize: 12 }}>
+                      Error: {entry.errorMessage}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              <div className="dl-inline-actions">
+                <Button size="sm" onClick={handleOpenSendDialog}>
+                  Compose & Send
+                </Button>
+                <Link to="/emails/history">
+                  <Button size="sm" variant="secondary">
+                    Open Email History
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
       <div className="dl-grid cols-2" style={{ marginTop: 16 }}>
         <Card title="Payment History" subtitle="Applied payments">
           {payments.length === 0 ? (
@@ -337,6 +427,20 @@ export function InvoiceDetailPage() {
 
         <DocumentStatusTimeline entries={invoice.statusHistory} title="Invoice Timeline" />
       </div>
+
+      <EmailComposeModal
+        open={composeOpen}
+        title="Send Invoice Email"
+        draft={composeDraft}
+        attachmentOptions={attachmentOptions}
+        sending={isSendingEmail}
+        onClose={() => {
+          setComposeOpen(false);
+          setComposeDraft(null);
+        }}
+        onChange={(draft) => setComposeDraft(draft)}
+        onSend={handleSendEmail}
+      />
     </>
   );
 }

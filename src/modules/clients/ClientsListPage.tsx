@@ -11,26 +11,37 @@ import { FilterBar } from '@/design-system/patterns/FilterBar';
 import { ResponsiveList } from '@/design-system/patterns/ResponsiveList';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { Skeleton } from '@/design-system/patterns/Skeleton';
+import { matchesSearchText } from '@/modules/insights/domain/filters';
 
 export function ClientsListPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const [segment, setSegment] = useState<'all' | 'with_outstanding' | 'over_10000'>('all');
+  const [sort, setSort] = useState<'recent' | 'outstanding_desc' | 'name_asc'>('recent');
 
   const loading = false;
 
   const filtered = useMemo(
-    () =>
-      clients.filter((client) => {
+    () => {
+      const rows = clients.filter((client) => {
         const statusMatch = status === 'all' || client.status === status;
-        const searchMatch =
-          search.trim().length === 0 ||
-          [client.name, client.email, client.contactName].some((field) =>
-            field.toLowerCase().includes(search.toLowerCase()),
-          );
+        const segmentMatch =
+          segment === 'all' ||
+          (segment === 'with_outstanding' && client.outstandingBalance > 0) ||
+          (segment === 'over_10000' && client.outstandingBalance >= 10000);
+        const searchMatch = matchesSearchText(search, [client.name, client.email, client.contactName]);
 
-        return statusMatch && searchMatch;
-      }),
-    [search, status],
+        return statusMatch && segmentMatch && searchMatch;
+      });
+
+      rows.sort((a, b) => {
+        if (sort === 'outstanding_desc') return b.outstandingBalance - a.outstandingBalance;
+        if (sort === 'name_asc') return a.name.localeCompare(b.name);
+        return b.lastActivityAt.localeCompare(a.lastActivityAt);
+      });
+      return rows;
+    },
+    [search, segment, sort, status],
   );
 
   return (
@@ -54,6 +65,18 @@ export function ClientsListPage() {
           style={{ width: 'min(340px, 100%)' }}
         />
         <Select
+          value={segment}
+          onChange={(event) =>
+            setSegment(event.target.value as 'all' | 'with_outstanding' | 'over_10000')
+          }
+          options={[
+            { label: 'All Segments', value: 'all' },
+            { label: 'With Outstanding', value: 'with_outstanding' },
+            { label: 'Outstanding >= R10,000', value: 'over_10000' },
+          ]}
+          style={{ width: 220 }}
+        />
+        <Select
           value={status}
           onChange={(event) => setStatus(event.target.value as 'all' | 'active' | 'inactive')}
           options={[
@@ -63,7 +86,18 @@ export function ClientsListPage() {
           ]}
           style={{ width: 170 }}
         />
-        <Button size="sm">Sort: Recent Activity</Button>
+        <Select
+          value={sort}
+          onChange={(event) =>
+            setSort(event.target.value as 'recent' | 'outstanding_desc' | 'name_asc')
+          }
+          options={[
+            { label: 'Sort: Recent Activity', value: 'recent' },
+            { label: 'Sort: Outstanding High', value: 'outstanding_desc' },
+            { label: 'Sort: Client Name A-Z', value: 'name_asc' },
+          ]}
+          style={{ width: 220 }}
+        />
         <Button size="sm" variant="ghost">
           Export
         </Button>

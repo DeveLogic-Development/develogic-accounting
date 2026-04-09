@@ -11,6 +11,7 @@ import { QuoteStatusBadge } from '@/design-system/patterns/StatusBadge';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
+import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
 
 export function QuotesListPage() {
   const navigate = useNavigate();
@@ -18,7 +19,11 @@ export function QuotesListPage() {
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  const [clientId, setClientId] = useState('all');
   const [issueDateFrom, setIssueDateFrom] = useState('');
+  const [issueDateTo, setIssueDateTo] = useState('');
+  const [sort, setSort] = useState<'issue_desc' | 'issue_asc' | 'total_desc' | 'total_asc'>('issue_desc');
+  const [segment, setSegment] = useState<'all' | 'needs_action' | 'accepted_not_converted'>('all');
   const [message, setMessage] = useState<string | null>(null);
 
   const clientNameById = useMemo(
@@ -27,21 +32,31 @@ export function QuotesListPage() {
   );
 
   const filtered = useMemo(
-    () =>
-      quoteSummaries.filter((quote) => {
+    () => {
+      const rows = quoteSummaries.filter((quote) => {
         const statusMatch = status === 'all' || quote.status === status;
-        const issueDateMatch = issueDateFrom.length === 0 || quote.issueDate >= issueDateFrom;
+        const clientMatch = clientId === 'all' || quote.clientId === clientId;
+        const issueDateMatch = matchesDateRange(quote.issueDate, issueDateFrom || undefined, issueDateTo || undefined);
+        const segmentMatch =
+          segment === 'all' ||
+          (segment === 'accepted_not_converted' && quote.status === 'accepted') ||
+          (segment === 'needs_action' && ['draft', 'sent', 'viewed', 'accepted'].includes(quote.status));
 
         const clientName = clientNameById.get(quote.clientId) ?? 'Unknown client';
-        const searchMatch =
-          search.trim().length === 0 ||
-          [quote.quoteNumber, clientName, quote.status].some((field) =>
-            field.toLowerCase().includes(search.toLowerCase()),
-          );
+        const searchMatch = matchesSearchText(search, [quote.quoteNumber, clientName, quote.status]);
 
-        return statusMatch && issueDateMatch && searchMatch;
-      }),
-    [clientNameById, issueDateFrom, quoteSummaries, search, status],
+        return statusMatch && clientMatch && issueDateMatch && segmentMatch && searchMatch;
+      });
+
+      rows.sort((a, b) => {
+        if (sort === 'issue_asc') return a.issueDate.localeCompare(b.issueDate);
+        if (sort === 'total_desc') return b.totalMinor - a.totalMinor;
+        if (sort === 'total_asc') return a.totalMinor - b.totalMinor;
+        return b.issueDate.localeCompare(a.issueDate);
+      });
+      return rows;
+    },
+    [clientNameById, clientId, issueDateFrom, issueDateTo, quoteSummaries, search, segment, sort, status],
   );
 
   const acceptedAwaitingConversion = quoteSummaries.filter((quote) => quote.status === 'accepted').length;
@@ -84,11 +99,32 @@ export function QuotesListPage() {
       {message ? <div className="dl-validation-inline" style={{ marginBottom: 12 }}>{message}</div> : null}
 
       <FilterBar>
+        <Select
+          value={segment}
+          onChange={(event) =>
+            setSegment(event.target.value as 'all' | 'needs_action' | 'accepted_not_converted')
+          }
+          options={[
+            { label: 'All Segments', value: 'all' },
+            { label: 'Needs Action', value: 'needs_action' },
+            { label: 'Accepted Awaiting Conversion', value: 'accepted_not_converted' },
+          ]}
+          style={{ width: 250 }}
+        />
         <Input
           placeholder="Search quote number, client, or status"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(360px, 100%)' }}
+        />
+        <Select
+          value={clientId}
+          onChange={(event) => setClientId(event.target.value)}
+          options={[
+            { label: 'All clients', value: 'all' },
+            ...clients.map((client) => ({ label: client.name, value: client.id })),
+          ]}
+          style={{ width: 220 }}
         />
         <Select
           value={status}
@@ -110,6 +146,25 @@ export function QuotesListPage() {
           value={issueDateFrom}
           onChange={(event) => setIssueDateFrom(event.target.value)}
           style={{ width: 180 }}
+        />
+        <Input
+          type="date"
+          value={issueDateTo}
+          onChange={(event) => setIssueDateTo(event.target.value)}
+          style={{ width: 180 }}
+        />
+        <Select
+          value={sort}
+          onChange={(event) =>
+            setSort(event.target.value as 'issue_desc' | 'issue_asc' | 'total_desc' | 'total_asc')
+          }
+          options={[
+            { label: 'Sort: Issue Date (Newest)', value: 'issue_desc' },
+            { label: 'Sort: Issue Date (Oldest)', value: 'issue_asc' },
+            { label: 'Sort: Total (High to Low)', value: 'total_desc' },
+            { label: 'Sort: Total (Low to High)', value: 'total_asc' },
+          ]}
+          style={{ width: 240 }}
         />
       </FilterBar>
 
