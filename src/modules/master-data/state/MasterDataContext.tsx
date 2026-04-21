@@ -4,8 +4,11 @@ import {
   createClientCommentInSupabase,
   createProductServiceInSupabase,
   deleteClientInSupabase,
+  deleteProductServiceInSupabase,
   loadClientCommentsFromSupabase,
+  loadProductServiceHistoryFromSupabase,
   loadSupabaseMasterData,
+  setProductServiceActiveInSupabase,
   updateClientInSupabase,
   updateProductServiceInSupabase,
 } from '../data/supabaseRepository';
@@ -15,6 +18,7 @@ import {
   MasterClient,
   MasterDataSource,
   MasterProductService,
+  ProductHistoryEvent,
   ProductServiceUpsertInput,
 } from '../domain/types';
 
@@ -44,6 +48,17 @@ interface MasterDataContextValue {
     productId: string,
     input: ProductServiceUpsertInput,
   ) => Promise<ActionResult<MasterProductService>>;
+  cloneProductService: (
+    productId: string,
+    overrides?: Partial<ProductServiceUpsertInput>,
+  ) => Promise<ActionResult<MasterProductService>>;
+  setProductServiceStatus: (
+    productId: string,
+    status: 'active' | 'inactive',
+  ) => Promise<ActionResult<MasterProductService>>;
+  deleteProductService: (productId: string) => Promise<ActionResult>;
+  getProductHistory: (productId: string) => ProductHistoryEvent[];
+  loadProductHistory: (productId: string) => Promise<ActionResult<ProductHistoryEvent[]>>;
   getCustomerComments: (clientId: string) => CustomerComment[];
   loadCustomerComments: (clientId: string) => Promise<ActionResult<CustomerComment[]>>;
   addCustomerComment: (clientId: string, body: string) => Promise<ActionResult<CustomerComment>>;
@@ -72,6 +87,7 @@ export function MasterDataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | undefined>();
   const [customerCommentsByClient, setCustomerCommentsByClient] = useState<Record<string, CustomerComment[]>>({});
+  const [productHistoryById, setProductHistoryById] = useState<Record<string, ProductHistoryEvent[]>>({});
 
   const refresh = async (): Promise<{ clients: MasterClient[]; productsServices: MasterProductService[] } | null> => {
     setLoading(true);
@@ -181,6 +197,66 @@ export function MasterDataProvider({ children }: { children: ReactNode }) {
       return updated
         ? { ok: true, data: updated }
         : { ok: false, error: 'Product/service updated but could not be reloaded.' };
+    },
+    cloneProductService: async (productId, overrides) => {
+      const source = productById.get(productId);
+      if (!source) return { ok: false, error: 'Item not found.' };
+
+      const payload: ProductServiceUpsertInput = {
+        name: `${source.name} Copy`,
+        type: source.type,
+        sku: source.sku,
+        usageUnit: source.usageUnit,
+        isCapitalAsset: source.isCapitalAsset,
+        imageUrl: source.imageUrl,
+        salesRate: source.salesRate,
+        salesAccountId: source.salesAccountId,
+        salesDescription: source.salesDescription,
+        purchaseRate: source.purchaseRate,
+        purchaseAccountId: source.purchaseAccountId,
+        purchaseDescription: source.purchaseDescription,
+        preferredVendorId: source.preferredVendorId,
+        reportingTags: source.reportingTags,
+        createdSource: 'clone',
+        isActive: true,
+        ...overrides,
+      };
+
+      const result = await createProductServiceInSupabase(payload);
+      if (!result.ok) return { ok: false, error: result.reason };
+
+      const reloaded = await refresh();
+      const created = reloaded?.productsServices.find((product) => product.id === result.id);
+      return created
+        ? { ok: true, data: created }
+        : { ok: false, error: 'Item cloned but could not be reloaded.' };
+    },
+    setProductServiceStatus: async (productId, status) => {
+      const result = await setProductServiceActiveInSupabase(productId, status === 'active');
+      if (!result.ok) return { ok: false, error: result.reason };
+      const reloaded = await refresh();
+      const updated = reloaded?.productsServices.find((product) => product.id === productId);
+      return updated
+        ? { ok: true, data: updated }
+        : { ok: false, error: 'Item status updated but could not be reloaded.' };
+    },
+    deleteProductService: async (productId) => {
+      const result = await deleteProductServiceInSupabase(productId);
+      if (!result.ok) return { ok: false, error: result.reason };
+      await refresh();
+      setProductHistoryById((previous) => {
+        const next = { ...previous };
+        delete next[productId];
+        return next;
+      });
+      return { ok: true };
+    },
+    getProductHistory: (productId) => productHistoryById[productId] ?? [],
+    loadProductHistory: async (productId) => {
+      const result = await loadProductServiceHistoryFromSupabase(productId);
+      if (!result.ok) return { ok: false, error: result.reason };
+      setProductHistoryById((previous) => ({ ...previous, [productId]: result.data }));
+      return { ok: true, data: result.data };
     },
     getCustomerComments: (clientId) => customerCommentsByClient[clientId] ?? [],
     loadCustomerComments: async (clientId) => {

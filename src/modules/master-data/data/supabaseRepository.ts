@@ -6,6 +6,7 @@ import {
   MasterClient,
   MasterDataSnapshot,
   MasterProductService,
+  ProductHistoryEvent,
   ProductServiceUpsertInput,
 } from '../domain/types';
 
@@ -102,12 +103,38 @@ interface ProductServiceRow {
   item_type: 'product' | 'service';
   name: string;
   sku: string | null;
+  usage_unit: string | null;
+  is_capital_asset: boolean | null;
+  image_url: string | null;
+  sales_rate: number | null;
+  sales_account_id: string | null;
+  sales_description: string | null;
+  purchase_rate: number | null;
+  purchase_account_id: string | null;
+  purchase_description: string | null;
+  preferred_vendor_id: string | null;
+  reporting_tags_json: unknown[] | null;
+  created_source: 'manual' | 'import' | 'clone' | 'system' | null;
+  created_by: string | null;
   description: string | null;
+  unit: string | null;
   unit_price: number;
   tax_setting_id: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface ActivityLogRow {
+  id: string;
+  action: 'insert' | 'update' | 'soft_delete' | 'restore' | 'status_change';
+  actor_user_id: string | null;
+  entity_id: string | null;
+  entity_label: string | null;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 interface TaxSettingRow {
@@ -123,6 +150,10 @@ type MutationResult =
   | { ok: true; id: string }
   | { ok: false; reason: string };
 
+type ProductHistoryLoadResult =
+  | { ok: true; data: ProductHistoryEvent[] }
+  | { ok: false; reason: string };
+
 function toStringRecord(
   value: Record<string, unknown> | null | undefined,
 ): Record<string, string> {
@@ -136,6 +167,14 @@ function toStringRecord(
 function toStringArray(value: unknown[] | null | undefined): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function mapDbItemTypeToDomain(value: ProductServiceRow['item_type']): MasterProductService['type'] {
+  return value === 'product' ? 'goods' : 'service';
+}
+
+function mapDomainItemTypeToDb(value: ProductServiceUpsertInput['type']): ProductServiceRow['item_type'] {
+  return value === 'goods' ? 'product' : 'service';
 }
 
 function choosePrimaryContact(
@@ -369,6 +408,91 @@ function mapClientInputToDb(
   };
 }
 
+function mapProductServiceRowToDomain(args: {
+  row: ProductServiceRow;
+  taxNameById: Map<string, string>;
+  clientNameById: Map<string, string>;
+}): MasterProductService {
+  const { row, taxNameById, clientNameById } = args;
+  const salesRate = Number(row.sales_rate ?? row.unit_price ?? 0);
+  const purchaseRate = Number(row.purchase_rate ?? 0);
+  const salesDescription = row.sales_description ?? row.description ?? undefined;
+  const usageUnit = row.usage_unit ?? row.unit ?? 'each';
+
+  return {
+    id: row.id,
+    name: row.name,
+    type: mapDbItemTypeToDomain(row.item_type),
+    sku: row.sku ?? undefined,
+    usageUnit,
+    isCapitalAsset: Boolean(row.is_capital_asset),
+    imageUrl: row.image_url ?? undefined,
+    salesRate,
+    salesAccountId: row.sales_account_id ?? undefined,
+    salesDescription,
+    purchaseRate,
+    purchaseAccountId: row.purchase_account_id ?? undefined,
+    purchaseDescription: row.purchase_description ?? undefined,
+    preferredVendorId: row.preferred_vendor_id ?? undefined,
+    preferredVendorName: row.preferred_vendor_id
+      ? clientNameById.get(row.preferred_vendor_id)
+      : undefined,
+    reportingTags: toStringArray(row.reporting_tags_json),
+    status: row.is_active ? 'active' : 'inactive',
+    isActive: row.is_active,
+    createdSource: row.created_source ?? undefined,
+    createdBy: row.created_by ?? undefined,
+    description: salesDescription,
+    unitPrice: salesRate,
+    taxCategory: row.tax_setting_id
+      ? taxNameById.get(row.tax_setting_id) ?? 'Unassigned'
+      : 'Unassigned',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapProductServiceInputToDb(args: {
+  input: ProductServiceUpsertInput;
+  userId: string;
+  businessId: string;
+}): Record<string, unknown> {
+  const { input, userId, businessId } = args;
+  const salesRate = Number(
+    input.salesRate ?? input.unitPrice ?? 0,
+  );
+  const purchaseRate = Number(input.purchaseRate ?? 0);
+  const salesDescription = input.salesDescription?.trim() || input.description?.trim() || null;
+  const normalizedTags = (input.reportingTags ?? [])
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+  const isActive = Boolean(input.isActive);
+
+  return {
+    business_id: businessId,
+    item_type: mapDomainItemTypeToDb(input.type),
+    name: input.name.trim(),
+    sku: input.sku?.trim() || null,
+    usage_unit: input.usageUnit?.trim() || 'each',
+    unit: input.usageUnit?.trim() || 'each',
+    is_capital_asset: Boolean(input.isCapitalAsset),
+    image_url: input.imageUrl?.trim() || null,
+    sales_rate: salesRate,
+    sales_account_id: input.salesAccountId?.trim() || null,
+    sales_description: salesDescription,
+    purchase_rate: purchaseRate,
+    purchase_account_id: input.purchaseAccountId?.trim() || null,
+    purchase_description: input.purchaseDescription?.trim() || null,
+    preferred_vendor_id: input.preferredVendorId?.trim() || null,
+    reporting_tags_json: normalizedTags,
+    created_source: input.createdSource ?? 'manual',
+    description: salesDescription,
+    unit_price: salesRate,
+    is_active: isActive,
+    created_by: userId,
+  };
+}
+
 async function replaceClientContacts(args: {
   client: Awaited<ReturnType<typeof getSupabaseBusinessContext>> extends { ok: true; data: infer T }
     ? T extends { client: infer C }
@@ -507,7 +631,32 @@ export async function loadSupabaseMasterData(): Promise<MasterDataLoadResult> {
     client
       .from('products_services')
       .select(
-        'id, item_type, name, sku, description, unit_price, tax_setting_id, is_active, created_at, updated_at',
+        [
+          'id',
+          'item_type',
+          'name',
+          'sku',
+          'usage_unit',
+          'is_capital_asset',
+          'image_url',
+          'sales_rate',
+          'sales_account_id',
+          'sales_description',
+          'purchase_rate',
+          'purchase_account_id',
+          'purchase_description',
+          'preferred_vendor_id',
+          'reporting_tags_json',
+          'created_source',
+          'created_by',
+          'description',
+          'unit',
+          'unit_price',
+          'tax_setting_id',
+          'is_active',
+          'created_at',
+          'updated_at',
+        ].join(', '),
       )
       .eq('business_id', businessId)
       .is('deleted_at', null)
@@ -557,22 +706,10 @@ export async function loadSupabaseMasterData(): Promise<MasterDataLoadResult> {
   const taxNameById = new Map(
     (taxesRes.data as TaxSettingRow[]).map((tax) => [tax.id, tax.name]),
   );
+  const clientNameById = new Map(clients.map((clientEntry) => [clientEntry.id, clientEntry.displayName]));
 
-  const productsServices: MasterProductService[] = (productsRes.data as ProductServiceRow[]).map(
-    (row) => ({
-      id: row.id,
-      name: row.name,
-      type: row.item_type,
-      sku: row.sku ?? undefined,
-      description: row.description ?? undefined,
-      unitPrice: Number(row.unit_price ?? 0),
-      taxCategory: row.tax_setting_id
-        ? taxNameById.get(row.tax_setting_id) ?? 'Unassigned'
-        : 'Unassigned',
-      isActive: row.is_active,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }),
+  const productsServices: MasterProductService[] = (productsRes.data as ProductServiceRow[]).map((row) =>
+    mapProductServiceRowToDomain({ row, taxNameById, clientNameById }),
   );
 
   return {
@@ -653,6 +790,37 @@ export async function deleteClientInSupabase(clientId: string): Promise<Mutation
   const { client, businessId } = context.data;
   const nowIso = new Date().toISOString();
 
+  const existingClient = await client
+    .from('clients')
+    .select('id, deleted_at')
+    .eq('business_id', businessId)
+    .eq('id', clientId)
+    .maybeSingle<{ id: string; deleted_at: string | null }>();
+
+  if (existingClient.error) return { ok: false, reason: existingClient.error.message };
+  if (!existingClient.data?.id) {
+    return { ok: false, reason: 'Customer not found.' };
+  }
+
+  const hardDeleteContacts = async () => {
+    const hardDelete = await client
+      .from('client_contacts')
+      .delete()
+      .eq('business_id', businessId)
+      .eq('client_id', clientId);
+
+    if (hardDelete.error) return { ok: false as const, reason: hardDelete.error.message };
+    return { ok: true as const };
+  };
+
+  // If the client is already soft-deleted from a previous partial run,
+  // treat this as an idempotent delete and clean up contacts best-effort.
+  if (existingClient.data.deleted_at) {
+    const cleanup = await hardDeleteContacts();
+    if (!cleanup.ok) return { ok: false, reason: cleanup.reason };
+    return { ok: true, id: existingClient.data.id };
+  }
+
   // Important: soft-delete contacts before client.
   // The DB trigger on client_contacts validates the referenced client and
   // can reject updates after the parent client is soft-deleted.
@@ -666,7 +834,19 @@ export async function deleteClientInSupabase(clientId: string): Promise<Mutation
     .eq('client_id', clientId)
     .is('deleted_at', null);
 
-  if (softDeleteContacts.error) return { ok: false, reason: softDeleteContacts.error.message };
+  if (softDeleteContacts.error) {
+    const isDeletedParentTriggerError =
+      softDeleteContacts.error.message.includes('not found for client contact');
+
+    if (!isDeletedParentTriggerError) {
+      return { ok: false, reason: softDeleteContacts.error.message };
+    }
+
+    // Fallback path for legacy inconsistent states:
+    // remove child contacts directly so client deletion can proceed.
+    const fallbackDelete = await hardDeleteContacts();
+    if (!fallbackDelete.ok) return { ok: false, reason: fallbackDelete.reason };
+  }
 
   const softDeleteClient = await client
     .from('clients')
@@ -749,16 +929,7 @@ export async function createProductServiceInSupabase(
 
   const insertItem = await client
     .from('products_services')
-    .insert({
-      business_id: businessId,
-      item_type: input.type,
-      name: input.name.trim(),
-      sku: input.sku?.trim() || null,
-      description: input.description?.trim() || null,
-      unit_price: Number(input.unitPrice),
-      is_active: input.isActive,
-      created_by: userId,
-    })
+    .insert(mapProductServiceInputToDb({ input, userId, businessId }))
     .select('id')
     .single<{ id: string }>();
 
@@ -772,22 +943,102 @@ export async function updateProductServiceInSupabase(
 ): Promise<MutationResult> {
   const context = await getSupabaseBusinessContext({ autoCreateBusiness: true });
   if (!context.ok) return { ok: false, reason: context.reason };
-  const { client, businessId } = context.data;
+  const { client, businessId, userId } = context.data;
+
+  const updatePayload = mapProductServiceInputToDb({ input, userId, businessId });
+  delete updatePayload.business_id;
+  delete updatePayload.created_by;
+  updatePayload.updated_at = new Date().toISOString();
 
   const updateItem = await client
     .from('products_services')
-    .update({
-      item_type: input.type,
-      name: input.name.trim(),
-      sku: input.sku?.trim() || null,
-      description: input.description?.trim() || null,
-      unit_price: Number(input.unitPrice),
-      is_active: input.isActive,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('business_id', businessId)
     .eq('id', productId);
 
   if (updateItem.error) return { ok: false, reason: updateItem.error.message };
   return { ok: true, id: productId };
+}
+
+export async function setProductServiceActiveInSupabase(
+  productId: string,
+  isActive: boolean,
+): Promise<MutationResult> {
+  const context = await getSupabaseBusinessContext({ autoCreateBusiness: true });
+  if (!context.ok) return { ok: false, reason: context.reason };
+  const { client, businessId } = context.data;
+
+  const updateItem = await client
+    .from('products_services')
+    .update({
+      is_active: isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('business_id', businessId)
+    .eq('id', productId)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle<{ id: string }>();
+
+  if (updateItem.error) return { ok: false, reason: updateItem.error.message };
+  if (!updateItem.data?.id) return { ok: false, reason: 'Item not found.' };
+  return { ok: true, id: updateItem.data.id };
+}
+
+export async function deleteProductServiceInSupabase(productId: string): Promise<MutationResult> {
+  const context = await getSupabaseBusinessContext({ autoCreateBusiness: true });
+  if (!context.ok) return { ok: false, reason: context.reason };
+  const { client, businessId } = context.data;
+  const nowIso = new Date().toISOString();
+
+  const updateItem = await client
+    .from('products_services')
+    .update({
+      is_active: false,
+      deleted_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('business_id', businessId)
+    .eq('id', productId)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle<{ id: string }>();
+
+  if (updateItem.error) return { ok: false, reason: updateItem.error.message };
+  if (!updateItem.data?.id) return { ok: false, reason: 'Item not found or already deleted.' };
+  return { ok: true, id: updateItem.data.id };
+}
+
+export async function loadProductServiceHistoryFromSupabase(
+  productId: string,
+): Promise<ProductHistoryLoadResult> {
+  const context = await getSupabaseBusinessContext({ autoCreateBusiness: true });
+  if (!context.ok) return { ok: false, reason: context.reason };
+  const { client, businessId } = context.data;
+
+  const historyRes = await client
+    .from('activity_logs')
+    .select(
+      'id, action, actor_user_id, entity_id, entity_label, before_data, after_data, metadata, created_at',
+    )
+    .eq('business_id', businessId)
+    .eq('entity_table', 'products_services')
+    .eq('entity_id', productId)
+    .order('created_at', { ascending: false });
+
+  if (historyRes.error) return { ok: false, reason: historyRes.error.message };
+
+  const events: ProductHistoryEvent[] = (historyRes.data as ActivityLogRow[]).map((row) => ({
+    id: row.id,
+    productId: row.entity_id ?? productId,
+    action: row.action,
+    actorUserId: row.actor_user_id ?? undefined,
+    createdAt: row.created_at,
+    entityLabel: row.entity_label ?? undefined,
+    beforeData: row.before_data ?? undefined,
+    afterData: row.after_data ?? undefined,
+    metadata: row.metadata ?? undefined,
+  }));
+
+  return { ok: true, data: events };
 }

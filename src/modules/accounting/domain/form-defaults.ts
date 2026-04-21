@@ -12,6 +12,7 @@ const DEFAULT_TAX_RATE = 15;
 export function createEmptyLineItem(position: number): QuoteItemFormValues {
   return {
     id: createId('line'),
+    productServiceId: undefined,
     itemName: '',
     description: '',
     quantity: 1,

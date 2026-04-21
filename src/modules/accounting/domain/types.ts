@@ -47,6 +47,7 @@ export interface DocumentPaymentSummary {
 
 export interface BaseDocumentItem {
   id: string;
+  productServiceId?: string;
   itemName: string;
   description: string;
   quantity: number;
@@ -138,6 +139,7 @@ export interface QuoteFormValues {
 
 export interface QuoteItemFormValues {
   id: string;
+  productServiceId?: string;
   itemName: string;
   description: string;
   quantity: number;
@@ -163,6 +165,7 @@ export interface InvoiceFormValues {
 
 export interface InvoiceItemFormValues {
   id: string;
+  productServiceId?: string;
   itemName: string;
   description: string;
   quantity: number;

@@ -51,6 +51,7 @@ export function mapInvoiceToFormValues(invoice: Invoice): InvoiceFormValues {
 export function mapQuoteItemsFormToDomain(items: QuoteItemFormValues[]): QuoteItem[] {
   return items.map((item, index) => ({
     id: item.id,
+    productServiceId: item.productServiceId,
     itemName: item.itemName,
     description: item.description,
     quantity: item.quantity,
@@ -64,6 +65,7 @@ export function mapQuoteItemsFormToDomain(items: QuoteItemFormValues[]): QuoteIt
 export function mapInvoiceItemsFormToDomain(items: InvoiceItemFormValues[]): InvoiceItem[] {
   return items.map((item, index) => ({
     id: item.id,
+    productServiceId: item.productServiceId,
     itemName: item.itemName,
     description: item.description,
     quantity: item.quantity,
@@ -77,6 +79,7 @@ export function mapInvoiceItemsFormToDomain(items: InvoiceItemFormValues[]): Inv
 function mapQuoteItemToFormValues(item: QuoteItem): QuoteItemFormValues {
   return {
     id: item.id,
+    productServiceId: item.productServiceId,
     itemName: item.itemName,
     description: item.description,
     quantity: item.quantity,
@@ -90,6 +93,7 @@ function mapQuoteItemToFormValues(item: QuoteItem): QuoteItemFormValues {
 function mapInvoiceItemToFormValues(item: InvoiceItem): InvoiceItemFormValues {
   return {
     id: item.id,
+    productServiceId: item.productServiceId,
     itemName: item.itemName,
     description: item.description,
     quantity: item.quantity,

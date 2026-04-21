@@ -42,8 +42,13 @@ export function AppRouter() {
             <Route path="clients/:clientId" element={<ClientDetailPage />} />
             <Route path="clients/:clientId/edit" element={<ClientFormPage />} />
 
-            <Route path="products-services" element={<ProductsServicesListPage />} />
-            <Route path="products-services/new" element={<ProductServiceFormPage />} />
+            <Route path="items" element={<ProductsServicesListPage />} />
+            <Route path="items/new" element={<ProductServiceFormPage />} />
+            <Route path="items/:productId" element={<ProductServiceDetailPage />} />
+            <Route path="items/:productId/edit" element={<ProductServiceFormPage />} />
+
+            <Route path="products-services" element={<Navigate to="/items" replace />} />
+            <Route path="products-services/new" element={<Navigate to="/items/new" replace />} />
             <Route path="products-services/:productId" element={<ProductServiceDetailPage />} />
             <Route path="products-services/:productId/edit" element={<ProductServiceFormPage />} />
 
