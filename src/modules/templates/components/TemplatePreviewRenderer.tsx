@@ -1,4 +1,5 @@
 import { formatDate } from '@/utils/format';
+import { loadBusinessSettings } from '@/modules/settings/domain/business-settings';
 import { mapTemplatePreviewModel } from '../domain/preview';
 import { TemplateConfig, TemplatePreviewPayload } from '../domain/types';
 
@@ -8,6 +9,10 @@ interface TemplatePreviewRendererProps {
 }
 
 export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRendererProps) {
+  const businessSettings = loadBusinessSettings();
+  const primaryColor = businessSettings.brandColor || config.branding.primaryColor;
+  const logoUrl = businessSettings.logoDataUrl || config.branding.logoUrl;
+  const accentColor = config.branding.accentColor;
   const model = mapTemplatePreviewModel(config, payload);
 
   return (
@@ -31,21 +36,21 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
             padding: config.layout.headerLayout === 'banner' ? '12px 14px' : 0,
             background:
               config.layout.headerLayout === 'banner'
-                ? `${config.branding.primaryColor}10`
+                ? `${primaryColor}10`
                 : 'transparent',
             borderRadius: 8,
           }}
         >
           <div style={{ textAlign: config.branding.logoPlacement }}>
-            {config.branding.logoUrl ? (
-              <img src={config.branding.logoUrl} alt="Template Logo" style={{ width: 120, height: 'auto' }} />
+            {logoUrl ? (
+              <img src={logoUrl} alt="Template Logo" style={{ width: 120, height: 'auto' }} />
             ) : (
               <div
                 style={{
                   width: 120,
                   height: 34,
                   borderRadius: 8,
-                  background: `${config.branding.primaryColor}20`,
+                  background: `${primaryColor}20`,
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -61,7 +66,7 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
                 marginTop: 10,
                 fontSize: 20,
                 fontWeight: headingWeight(config.branding.titleEmphasis),
-                color: config.branding.primaryColor,
+                color: primaryColor,
               }}
             >
               {model.title}
@@ -156,8 +161,7 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
             style={{
               marginLeft: config.summary.alignment === 'right' ? 'auto' : 0,
               width: config.layout.summaryPanelPosition === 'right' ? 'min(360px, 100%)' : '100%',
-              border:
-                config.summary.emphasizeTotal === 'boxed' ? `1px solid ${config.branding.accentColor}33` : 'none',
+              border: config.summary.emphasizeTotal === 'boxed' ? `1px solid ${accentColor}33` : 'none',
               borderRadius: 8,
               padding: config.summary.emphasizeTotal === 'boxed' ? 10 : 0,
             }}

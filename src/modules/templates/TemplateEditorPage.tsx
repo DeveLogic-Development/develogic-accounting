@@ -102,6 +102,11 @@ export function TemplateEditorPage() {
     templateType === 'invoice' ? createInvoiceTemplatePreviewPayload() : createQuoteTemplatePreviewPayload();
 
   const editable = !previewOnly && (!snapshot || snapshot.template.status !== 'archived');
+  const editBlockedReason = previewOnly
+    ? 'Preview mode is active. Editing actions are disabled.'
+    : snapshot?.template.status === 'archived'
+      ? 'Archived templates are read-only. Duplicate the template to make changes.'
+      : null;
 
   const handleSaveDraft = () => {
     if (!editable) return;
@@ -287,6 +292,7 @@ export function TemplateEditorPage() {
       />
 
       {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
+      {editBlockedReason ? <InlineNotice tone="info">{editBlockedReason}</InlineNotice> : null}
 
       <TemplateBuilderLayout
         leftPanel={

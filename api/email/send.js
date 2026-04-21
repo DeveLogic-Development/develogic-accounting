@@ -42,15 +42,6 @@ async function sendWithNodemailer(config, payload) {
   };
 }
 
-async function sendWithMock(payload) {
-  return {
-    provider: 'nodemailer-mock',
-    messageId: `mock-${Date.now()}`,
-    sentAt: new Date().toISOString(),
-    simulatedRecipient: payload.recipient.to,
-  };
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({
@@ -103,10 +94,7 @@ export default async function handler(req, res) {
 
   try {
     const payload = validation.data;
-    const sendResult =
-      capabilities.mode === 'mock'
-        ? await sendWithMock(payload)
-        : await sendWithNodemailer(config, payload);
+    const sendResult = await sendWithNodemailer(config, payload);
 
     res.status(200).json({
       ok: true,

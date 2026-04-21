@@ -194,10 +194,24 @@ export function LineItemsEditor<TItem extends LineItemValue>({
                   </td>
                   <td>
                     <div className="dl-inline-actions">
-                      <Button size="sm" variant="ghost" type="button" onClick={() => moveItem(index, -1)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        onClick={() => moveItem(index, -1)}
+                        disabled={index === 0}
+                        title={index === 0 ? 'Already first line item' : undefined}
+                      >
                         Up
                       </Button>
-                      <Button size="sm" variant="ghost" type="button" onClick={() => moveItem(index, 1)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        onClick={() => moveItem(index, 1)}
+                        disabled={index === items.length - 1}
+                        title={index === items.length - 1 ? 'Already last line item' : undefined}
+                      >
                         Down
                       </Button>
                       <Button

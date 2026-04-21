@@ -1,5 +1,15 @@
 import { TemplatePreviewPayload } from './types';
 
+interface BusinessPreviewDetails {
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  addressLines?: string[];
+  registrationNumber?: string;
+  taxNumber?: string;
+}
+
 export function buildPreviewPayloadFromQuote(input: {
   quoteNumber: string;
   issueDate: string;
@@ -28,7 +38,18 @@ export function buildPreviewPayloadFromQuote(input: {
   clientEmail?: string;
   clientPhone?: string;
   clientAddressLines?: string[];
+  business?: BusinessPreviewDetails;
 }): TemplatePreviewPayload {
+  const business = input.business ?? {
+    name: 'DeveLogic Digital',
+    contactName: 'Finance Team',
+    email: 'accounts@develogic.digital',
+    phone: '+27 11 555 0190',
+    addressLines: ['8 Sandton Drive', 'Sandton, Johannesburg', 'South Africa'],
+    registrationNumber: '2019/445882/07',
+    taxNumber: '9054922134',
+  };
+
   return {
     documentType: 'quote',
     documentTitle: 'Quote',
@@ -38,13 +59,13 @@ export function buildPreviewPayloadFromQuote(input: {
     dueOrExpiryDate: input.expiryDate,
     reference: input.quoteNumber,
     business: {
-      name: 'DeveLogic Digital',
-      contactName: 'Finance Team',
-      email: 'accounts@develogic.digital',
-      phone: '+27 11 555 0190',
-      addressLines: ['8 Sandton Drive', 'Sandton, Johannesburg', 'South Africa'],
-      registrationNumber: '2019/445882/07',
-      taxNumber: '9054922134',
+      name: business.name,
+      contactName: business.contactName,
+      email: business.email,
+      phone: business.phone,
+      addressLines: business.addressLines ?? [],
+      registrationNumber: business.registrationNumber,
+      taxNumber: business.taxNumber,
     },
     client: {
       name: input.clientName,
@@ -90,7 +111,18 @@ export function buildPreviewPayloadFromInvoice(input: {
   clientEmail?: string;
   clientPhone?: string;
   clientAddressLines?: string[];
+  business?: BusinessPreviewDetails;
 }): TemplatePreviewPayload {
+  const business = input.business ?? {
+    name: 'DeveLogic Digital',
+    contactName: 'Finance Team',
+    email: 'accounts@develogic.digital',
+    phone: '+27 11 555 0190',
+    addressLines: ['8 Sandton Drive', 'Sandton, Johannesburg', 'South Africa'],
+    registrationNumber: '2019/445882/07',
+    taxNumber: '9054922134',
+  };
+
   return {
     documentType: 'invoice',
     documentTitle: 'Invoice',
@@ -100,13 +132,13 @@ export function buildPreviewPayloadFromInvoice(input: {
     dueOrExpiryDate: input.dueDate,
     reference: input.invoiceNumber,
     business: {
-      name: 'DeveLogic Digital',
-      contactName: 'Finance Team',
-      email: 'accounts@develogic.digital',
-      phone: '+27 11 555 0190',
-      addressLines: ['8 Sandton Drive', 'Sandton, Johannesburg', 'South Africa'],
-      registrationNumber: '2019/445882/07',
-      taxNumber: '9054922134',
+      name: business.name,
+      contactName: business.contactName,
+      email: business.email,
+      phone: business.phone,
+      addressLines: business.addressLines ?? [],
+      registrationNumber: business.registrationNumber,
+      taxNumber: business.taxNumber,
     },
     client: {
       name: input.clientName,

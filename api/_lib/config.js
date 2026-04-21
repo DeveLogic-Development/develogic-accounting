@@ -23,7 +23,7 @@ export function getServerConfig() {
   const allowedOrigins = parseOrigins(process.env.APP_ALLOWED_ORIGINS);
   const emailMode =
     (process.env.EMAIL_TRANSPORT_MODE || '').trim().toLowerCase() ||
-    (isProductionLike ? 'smtp' : 'mock');
+    'smtp';
 
   return {
     runtime: {
@@ -31,7 +31,7 @@ export function getServerConfig() {
       isProductionLike,
     },
     email: {
-      mode: ['smtp', 'mock', 'disabled'].includes(emailMode) ? emailMode : 'mock',
+      mode: ['smtp', 'mock', 'disabled'].includes(emailMode) ? emailMode : 'smtp',
       maxAttachmentBytes: Math.floor(asNumber(process.env.EMAIL_MAX_ATTACHMENT_MB, 5) * 1024 * 1024),
       smtp: {
         host: process.env.SMTP_HOST || '',
@@ -67,9 +67,9 @@ export function getEmailCapabilities(config = getServerConfig()) {
 
   if (config.email.mode === 'mock') {
     return {
-      canSend: true,
-      mode: 'mock',
-      reason: 'Mock email transport is active.',
+      canSend: false,
+      mode: 'disabled',
+      reason: 'Mock transport is disabled for this build. Configure SMTP to send real emails.',
     };
   }
 

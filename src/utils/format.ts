@@ -10,17 +10,23 @@ export function formatMinorCurrency(valueMinor: number, currency = 'ZAR'): strin
   return formatCurrency(valueMinor / 100, currency);
 }
 
-export function formatDate(date: string): string {
+export function formatDate(date: string | Date | null | undefined, fallback = '—'): string {
+  if (!date) return fallback;
+  const parsed = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(parsed.getTime())) return fallback;
   return new Intl.DateTimeFormat('en-ZA', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(date));
+  }).format(parsed);
 }
 
-export function formatRelativeDate(date: string): string {
+export function formatRelativeDate(date: string | Date | null | undefined): string {
+  if (!date) return '—';
   const now = Date.now();
-  const then = new Date(date).getTime();
+  const parsed = date instanceof Date ? date : new Date(date);
+  const then = parsed.getTime();
+  if (Number.isNaN(then)) return '—';
   const diffMs = now - then;
   const dayMs = 24 * 60 * 60 * 1000;
 

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { clients } from '@/mocks/data';
 import { Input } from '@/design-system/primitives/Input';
 import { Select } from '@/design-system/primitives/Select';
 import { Button } from '@/design-system/primitives/Button';
@@ -13,10 +12,12 @@ import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineN
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 
 export function InvoicesListPage() {
   const navigate = useNavigate();
   const { invoiceSummaries, duplicateInvoice, transitionInvoice } = useAccounting();
+  const { clients, getClientNameById } = useMasterData();
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
@@ -27,11 +28,6 @@ export function InvoicesListPage() {
   const [segment, setSegment] = useState<'all' | 'unpaid' | 'overdue'>('all');
   const [sort, setSort] = useState<'due_asc' | 'due_desc' | 'outstanding_desc' | 'issue_desc'>('due_asc');
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
-
-  const clientNameById = useMemo(
-    () => new Map(clients.map((client) => [client.id, client.name])),
-    [],
-  );
 
   const filtered = useMemo(
     () => {
@@ -48,7 +44,7 @@ export function InvoicesListPage() {
           segment === 'all' ||
           (segment === 'overdue' && invoice.status === 'overdue') ||
           (segment === 'unpaid' && invoice.outstandingMinor > 0);
-        const clientName = clientNameById.get(invoice.clientId) ?? 'Unknown client';
+        const clientName = getClientNameById(invoice.clientId);
 
         const searchMatch = matchesSearchText(search, [invoice.invoiceNumber, clientName, invoice.status]);
 
@@ -65,9 +61,9 @@ export function InvoicesListPage() {
       return rows;
     },
     [
-      clientNameById,
       clientId,
       dueBefore,
+      getClientNameById,
       invoiceSummaries,
       issueDateFrom,
       issueDateTo,
@@ -225,7 +221,7 @@ export function InvoicesListPage() {
             desktopRows={
               <>
                 {filtered.map((invoice) => {
-                  const clientName = clientNameById.get(invoice.clientId) ?? 'Unknown client';
+                  const clientName = getClientNameById(invoice.clientId);
 
                   return (
                     <tr key={invoice.id}>
@@ -267,7 +263,7 @@ export function InvoicesListPage() {
             mobileCards={
               <>
                 {filtered.map((invoice) => {
-                  const clientName = clientNameById.get(invoice.clientId) ?? 'Unknown client';
+                  const clientName = getClientNameById(invoice.clientId);
                   return (
                     <article key={invoice.id} className="dl-mobile-item">
                       <div className="dl-mobile-item-header">

@@ -2,7 +2,12 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { mobileNav, sidebarNav } from '@/app/navigation';
 import { IconButton } from '@/design-system/primitives/IconButton';
 import { Input } from '@/design-system/primitives/Input';
-import { ToastPlaceholder } from '@/design-system/patterns/ToastPlaceholder';
+import { Button } from '@/design-system/primitives/Button';
+import { NotificationsDropdown } from '@/modules/notifications/components/NotificationsDropdown';
+import { ToastViewport } from '@/modules/notifications/components/ToastViewport';
+import { SystemNotificationSync } from '@/modules/notifications/components/SystemNotificationSync';
+import { useBusinessSettings } from '@/modules/settings/hooks/useBusinessSettings';
+import { useAuth } from '@/modules/auth/hooks/useAuth';
 
 function breadcrumbsFromPath(pathname: string): string[] {
   const parts = pathname.split('/').filter(Boolean);
@@ -19,14 +24,19 @@ function toTitleCase(value: string): string {
 
 export function AppLayout() {
   const location = useLocation();
+  const businessSettings = useBusinessSettings();
+  const { userEmail, signOut } = useAuth();
   const crumbs = breadcrumbsFromPath(location.pathname);
 
   return (
     <div className="dl-layout">
       <aside className="dl-sidebar" aria-label="Primary navigation">
         <div className="dl-brand">
-          <span className="dl-brand-title">DeveLogic Accounting</span>
-          <span className="dl-brand-subtitle">DeveLogic Digital</span>
+          {businessSettings.logoDataUrl ? (
+            <img className="dl-brand-logo" src={businessSettings.logoDataUrl} alt={`${businessSettings.businessName} logo`} />
+          ) : null}
+          {/* <span className="dl-brand-title">DeveLogic Accounting</span> */}
+          <span className="dl-brand-subtitle">{businessSettings.businessName}</span>
         </div>
 
         {sidebarNav.map((group) => (
@@ -47,14 +57,24 @@ export function AppLayout() {
       </aside>
 
       <div className="dl-main">
+        <SystemNotificationSync />
         <header className="dl-topbar">
           <div className="dl-search">
             <Input placeholder="Search clients, quotes, and invoices (coming soon)" aria-label="Global search" />
           </div>
           <div className="dl-topbar-right">
-            <IconButton icon="⟳" label="Sync" />
-            <IconButton icon="🔔" label="Notifications" />
-            <ToastPlaceholder />
+            <span className="dl-muted dl-desktop-only" style={{ fontSize: 12 }}>
+              {userEmail}
+            </span>
+            <IconButton
+              icon="⟳"
+              label="Refresh App Data"
+              onClick={() => window.location.reload()}
+            />
+            <NotificationsDropdown />
+            <Button size="sm" variant="ghost" onClick={() => void signOut()}>
+              Sign out
+            </Button>
           </div>
         </header>
 
@@ -79,6 +99,7 @@ export function AppLayout() {
           </NavLink>
         ))}
       </nav>
+      <ToastViewport />
     </div>
   );
 }

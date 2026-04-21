@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { clients } from '@/mocks/data';
 import { Input } from '@/design-system/primitives/Input';
 import { Select } from '@/design-system/primitives/Select';
 import { Button } from '@/design-system/primitives/Button';
@@ -13,10 +12,12 @@ import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineN
 import { formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { matchesDateRange, matchesSearchText } from '@/modules/insights/domain/filters';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 
 export function QuotesListPage() {
   const navigate = useNavigate();
   const { quoteSummaries, transitionQuote, duplicateQuote, convertQuoteToInvoice } = useAccounting();
+  const { clients, getClientNameById } = useMasterData();
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
@@ -26,11 +27,6 @@ export function QuotesListPage() {
   const [sort, setSort] = useState<'issue_desc' | 'issue_asc' | 'total_desc' | 'total_asc'>('issue_desc');
   const [segment, setSegment] = useState<'all' | 'needs_action' | 'accepted_not_converted'>('all');
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
-
-  const clientNameById = useMemo(
-    () => new Map(clients.map((client) => [client.id, client.name])),
-    [],
-  );
 
   const filtered = useMemo(
     () => {
@@ -43,7 +39,7 @@ export function QuotesListPage() {
           (segment === 'accepted_not_converted' && quote.status === 'accepted') ||
           (segment === 'needs_action' && ['draft', 'sent', 'viewed', 'accepted'].includes(quote.status));
 
-        const clientName = clientNameById.get(quote.clientId) ?? 'Unknown client';
+        const clientName = getClientNameById(quote.clientId);
         const searchMatch = matchesSearchText(search, [quote.quoteNumber, clientName, quote.status]);
 
         return statusMatch && clientMatch && issueDateMatch && segmentMatch && searchMatch;
@@ -57,7 +53,7 @@ export function QuotesListPage() {
       });
       return rows;
     },
-    [clientNameById, clientId, issueDateFrom, issueDateTo, quoteSummaries, search, segment, sort, status],
+    [clientId, getClientNameById, issueDateFrom, issueDateTo, quoteSummaries, search, segment, sort, status],
   );
 
   const acceptedAwaitingConversion = quoteSummaries.filter((quote) => quote.status === 'accepted').length;
@@ -196,7 +192,7 @@ export function QuotesListPage() {
             desktopRows={
               <>
                 {filtered.map((quote) => {
-                  const clientName = clientNameById.get(quote.clientId) ?? 'Unknown client';
+                  const clientName = getClientNameById(quote.clientId);
 
                   return (
                     <tr key={quote.id}>
@@ -236,7 +232,7 @@ export function QuotesListPage() {
             mobileCards={
               <>
                 {filtered.map((quote) => {
-                  const clientName = clientNameById.get(quote.clientId) ?? 'Unknown client';
+                  const clientName = getClientNameById(quote.clientId);
                   return (
                     <article key={quote.id} className="dl-mobile-item">
                       <div className="dl-mobile-item-header">

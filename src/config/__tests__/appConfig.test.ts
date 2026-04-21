@@ -5,6 +5,8 @@ describe('app config', () => {
   it('builds safe defaults when env is sparse', () => {
     const config = createAppConfig({
       MODE: 'development',
+    }, {
+      includeExampleFallback: false,
     });
 
     expect(config.features.emailEnabled).toBe(true);
@@ -19,6 +21,8 @@ describe('app config', () => {
       VITE_SUPABASE_URL: 'https://xyz.supabase.co',
       VITE_SUPABASE_ANON_KEY: 'anon',
       VITE_SUPABASE_STORAGE_BUCKET: 'documents',
+    }, {
+      includeExampleFallback: false,
     });
 
     expect(config.runtime.isProductionLike).toBe(true);

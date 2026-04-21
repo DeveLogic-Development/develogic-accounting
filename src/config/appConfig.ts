@@ -47,15 +47,36 @@ function normalizeBaseUrl(value?: string): string | undefined {
   return trimmed.replace(/\/+$/, '');
 }
 
-export function createAppConfig(env: Record<string, string | undefined>): AppConfig {
+const envExample =
+  typeof __ENV_EXAMPLE__ !== 'undefined' ? __ENV_EXAMPLE__ : undefined;
+
+function readEnv(
+  env: Record<string, string | undefined>,
+  key: string,
+  includeExampleFallback: boolean,
+): string | undefined {
+  const direct = env[key]?.trim();
+  if (direct) return direct;
+  if (!includeExampleFallback) return undefined;
+  const fallback = envExample?.[key]?.trim();
+  return fallback || undefined;
+}
+
+export function createAppConfig(
+  env: Record<string, string | undefined>,
+  options?: { includeExampleFallback?: boolean },
+): AppConfig {
+  const includeExampleFallback = options?.includeExampleFallback ?? true;
   const mode = (env.MODE ?? 'development') as RuntimeMode;
   const isProductionLike = mode === 'production';
 
-  const supabaseUrl = env.VITE_SUPABASE_URL?.trim() || undefined;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY?.trim() || undefined;
-  const storageBucket = env.VITE_SUPABASE_STORAGE_BUCKET?.trim() || undefined;
+  const supabaseUrl = readEnv(env, 'VITE_SUPABASE_URL', includeExampleFallback);
+  const supabaseAnonKey = readEnv(env, 'VITE_SUPABASE_ANON_KEY', includeExampleFallback);
+  const storageBucket = readEnv(env, 'VITE_SUPABASE_STORAGE_BUCKET', includeExampleFallback);
   const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
   const storageConfigured = Boolean(supabaseConfigured && storageBucket);
+  const fallbackBaseUrl =
+    typeof window !== 'undefined' ? window.location.origin : undefined;
 
   const config: AppConfig = {
     runtime: {
@@ -63,11 +84,13 @@ export function createAppConfig(env: Record<string, string | undefined>): AppCon
       isProductionLike,
     },
     app: {
-      baseUrl: normalizeBaseUrl(env.VITE_APP_BASE_URL),
+      baseUrl: normalizeBaseUrl(
+        readEnv(env, 'VITE_APP_BASE_URL', includeExampleFallback) ?? fallbackBaseUrl,
+      ),
     },
     features: {
-      emailEnabled: asBoolean(env.VITE_FEATURE_EMAIL_ENABLED, true),
-      reportsEnabled: asBoolean(env.VITE_FEATURE_REPORTS_ENABLED, true),
+      emailEnabled: asBoolean(readEnv(env, 'VITE_FEATURE_EMAIL_ENABLED', includeExampleFallback), true),
+      reportsEnabled: asBoolean(readEnv(env, 'VITE_FEATURE_REPORTS_ENABLED', includeExampleFallback), true),
     },
     integrations: {
       supabase: {
@@ -81,7 +104,7 @@ export function createAppConfig(env: Record<string, string | undefined>): AppCon
       },
     },
     limits: {
-      emailAttachmentMaxMb: asNumber(env.VITE_EMAIL_MAX_ATTACHMENT_MB, 5),
+      emailAttachmentMaxMb: asNumber(readEnv(env, 'VITE_EMAIL_MAX_ATTACHMENT_MB', includeExampleFallback), 5),
     },
     warnings: [],
   };

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { productsServices } from '@/mocks/data';
 import { Input } from '@/design-system/primitives/Input';
 import { Select } from '@/design-system/primitives/Select';
 import { Button } from '@/design-system/primitives/Button';
@@ -11,8 +10,12 @@ import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { Badge } from '@/design-system/primitives/Badge';
 import { formatCurrency } from '@/utils/format';
 import { matchesSearchText } from '@/modules/insights/domain/filters';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
+import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 
 export function ProductsServicesListPage() {
+  const { productsServices } = useMasterData();
+  const { state } = useAccounting();
   const [search, setSearch] = useState('');
   const [type, setType] = useState<'all' | 'product' | 'service'>('all');
   const [activeState, setActiveState] = useState<'all' | 'active' | 'inactive'>('all');
@@ -20,15 +23,27 @@ export function ProductsServicesListPage() {
 
   const filtered = useMemo(
     () => {
-      const rows = productsServices.filter((entry) => {
-        const typeMatch = type === 'all' || entry.type === type;
-        const activeMatch =
-          activeState === 'all' ||
-          (activeState === 'active' && entry.isActive) ||
-          (activeState === 'inactive' && !entry.isActive);
-        const searchMatch = matchesSearchText(search, [entry.name, entry.sku, entry.description]);
-        return typeMatch && activeMatch && searchMatch;
-      });
+      const usageByName = new Map<string, number>();
+      [...state.quotes.flatMap((quote) => quote.items), ...state.invoices.flatMap((invoice) => invoice.items)].forEach(
+        (item) => {
+          usageByName.set(item.itemName, (usageByName.get(item.itemName) ?? 0) + 1);
+        },
+      );
+
+      const rows = productsServices
+        .map((entry) => ({
+          ...entry,
+          usageCount: usageByName.get(entry.name) ?? 0,
+        }))
+        .filter((entry) => {
+          const typeMatch = type === 'all' || entry.type === type;
+          const activeMatch =
+            activeState === 'all' ||
+            (activeState === 'active' && entry.isActive) ||
+            (activeState === 'inactive' && !entry.isActive);
+          const searchMatch = matchesSearchText(search, [entry.name, entry.sku, entry.description]);
+          return typeMatch && activeMatch && searchMatch;
+        });
 
       rows.sort((a, b) => {
         if (sort === 'price_desc') return b.unitPrice - a.unitPrice;
@@ -37,7 +52,7 @@ export function ProductsServicesListPage() {
       });
       return rows;
     },
-    [activeState, search, sort, type],
+    [activeState, productsServices, search, sort, state.invoices, state.quotes, type],
   );
 
   return (
@@ -46,12 +61,12 @@ export function ProductsServicesListPage() {
         title="Products & Services"
         subtitle="Manage priceable services, products, and default tax setup."
         actions={
-          <>
-            <Button variant="secondary">Bulk Update</Button>
+          <Link to="/products-services/new">
             <Button variant="primary">Create Item</Button>
-          </>
+          </Link>
         }
       />
+
 
       <FilterBar ariaLabel="Product and service filters">
         <Input
@@ -100,7 +115,11 @@ export function ProductsServicesListPage() {
         <EmptyState
           title="No products or services"
           description="Create your first billing item to speed up quote and invoice creation."
-          action={<Button variant="primary">Create Item</Button>}
+          action={
+            <Link to="/products-services/new">
+              <Button variant="primary">Create Item</Button>
+            </Link>
+          }
         />
       ) : (
         <>

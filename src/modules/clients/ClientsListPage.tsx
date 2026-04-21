@@ -1,111 +1,198 @@
-import { useMemo, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { clients } from '@/mocks/data';
+import { createPortal } from 'react-dom';
 import { formatCurrency, formatDate } from '@/utils/format';
 import { Input } from '@/design-system/primitives/Input';
 import { Select } from '@/design-system/primitives/Select';
 import { Button } from '@/design-system/primitives/Button';
 import { Badge } from '@/design-system/primitives/Badge';
+import { IconButton } from '@/design-system/primitives/IconButton';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { FilterBar } from '@/design-system/patterns/FilterBar';
 import { ResponsiveList } from '@/design-system/patterns/ResponsiveList';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { Skeleton } from '@/design-system/patterns/Skeleton';
+import { InlineNotice } from '@/design-system/patterns/InlineNotice';
 import { matchesSearchText } from '@/modules/insights/domain/filters';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
+import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
+
+type SegmentFilter = 'all' | 'with_outstanding' | 'high_outstanding';
+type StatusFilter = 'all' | 'active' | 'inactive';
+type TypeFilter = 'all' | 'business' | 'individual';
+type SortFilter = 'recent' | 'outstanding_desc' | 'name_asc';
 
 export function ClientsListPage() {
+  const { clients, loading, deleteClient } = useMasterData();
+  const { invoiceSummaries, state } = useAccounting();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all');
-  const [segment, setSegment] = useState<'all' | 'with_outstanding' | 'over_10000'>('all');
-  const [sort, setSort] = useState<'recent' | 'outstanding_desc' | 'name_asc'>('recent');
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [segment, setSegment] = useState<SegmentFilter>('all');
+  const [customerType, setCustomerType] = useState<TypeFilter>('all');
+  const [sort, setSort] = useState<SortFilter>('recent');
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
 
-  const loading = false;
+  const filtered = useMemo(() => {
+    const metricsByClient = new Map<
+      string,
+      { outstandingBalance: number; lastActivityAt?: string }
+    >();
 
-  const filtered = useMemo(
-    () => {
-      const rows = clients.filter((client) => {
+    invoiceSummaries.forEach((invoice) => {
+      const current = metricsByClient.get(invoice.clientId) ?? {
+        outstandingBalance: 0,
+      };
+      current.outstandingBalance += invoice.outstandingMinor / 100;
+      current.lastActivityAt = [current.lastActivityAt, invoice.issueDate]
+        .filter(Boolean)
+        .sort()
+        .at(-1);
+      metricsByClient.set(invoice.clientId, current);
+    });
+
+    state.quotes.forEach((quote) => {
+      const current = metricsByClient.get(quote.clientId) ?? {
+        outstandingBalance: 0,
+      };
+      current.lastActivityAt = [current.lastActivityAt, quote.issueDate]
+        .filter(Boolean)
+        .sort()
+        .at(-1);
+      metricsByClient.set(quote.clientId, current);
+    });
+
+    const rows = clients
+      .map((client) => {
+        const metrics = metricsByClient.get(client.id);
+        const fallbackActivity = client.updatedAt || client.createdAt;
+        const workPhone =
+          [client.workPhoneCountryCode, client.workPhoneNumber]
+            .filter(Boolean)
+            .join(' ') ||
+          client.phone ||
+          'N/A';
+        return {
+          ...client,
+          status: client.isActive ? 'active' : 'inactive',
+          outstandingBalance: metrics?.outstandingBalance ?? 0,
+          unusedCredits: client.unusedCredits ?? 0,
+          lastActivityAt: metrics?.lastActivityAt ?? fallbackActivity,
+          workPhone,
+        };
+      })
+      .filter((client) => {
         const statusMatch = status === 'all' || client.status === status;
         const segmentMatch =
           segment === 'all' ||
           (segment === 'with_outstanding' && client.outstandingBalance > 0) ||
-          (segment === 'over_10000' && client.outstandingBalance >= 10000);
-        const searchMatch = matchesSearchText(search, [client.name, client.email, client.contactName]);
+          (segment === 'high_outstanding' && client.outstandingBalance >= 10000);
+        const typeMatch = customerType === 'all' || client.customerType === customerType;
+        const searchMatch = matchesSearchText(search, [
+          client.displayName,
+          client.companyName,
+          client.email,
+          client.workPhone,
+        ]);
 
-        return statusMatch && segmentMatch && searchMatch;
+        return statusMatch && segmentMatch && typeMatch && searchMatch;
       });
 
-      rows.sort((a, b) => {
-        if (sort === 'outstanding_desc') return b.outstandingBalance - a.outstandingBalance;
-        if (sort === 'name_asc') return a.name.localeCompare(b.name);
-        return b.lastActivityAt.localeCompare(a.lastActivityAt);
-      });
-      return rows;
-    },
-    [search, segment, sort, status],
-  );
+    rows.sort((a, b) => {
+      if (sort === 'outstanding_desc') return b.outstandingBalance - a.outstandingBalance;
+      if (sort === 'name_asc') return a.displayName.localeCompare(b.displayName);
+      return b.lastActivityAt.localeCompare(a.lastActivityAt);
+    });
+
+    return rows;
+  }, [clients, invoiceSummaries, search, segment, sort, state.quotes, status, customerType]);
+
+  const handleDeleteClient = async (clientId: string, displayName: string) => {
+    const confirmed = window.confirm(
+      `Delete customer "${displayName}"? This will hide it from active records.`,
+    );
+    if (!confirmed) return;
+
+    setNotice(null);
+    setDeletingClientId(clientId);
+    const result = await deleteClient(clientId);
+    setDeletingClientId(null);
+
+    if (!result.ok) {
+      setNotice({ tone: 'error', text: result.error ?? 'Unable to delete customer.' });
+      return;
+    }
+
+    setNotice({ tone: 'success', text: `Customer "${displayName}" deleted.` });
+  };
 
   return (
     <>
       <PageHeader
-        title="Clients"
-        subtitle="Manage customer profiles, contacts, balances, and recent activity."
+        title="Customers"
+        subtitle="Accounting customer workspace with receivables, contacts, and customer activity."
         actions={
-          <>
-            <Button variant="secondary">Import CSV</Button>
-            <Button variant="primary">Create Client</Button>
-          </>
+          <Link to="/clients/new">
+            <Button variant="primary">New Customer</Button>
+          </Link>
         }
       />
 
-      <FilterBar ariaLabel="Client filters">
+      <FilterBar ariaLabel="Customer filters">
         <Input
-          aria-label="Search clients"
-          placeholder="Search clients"
+          aria-label="Search customers"
+          placeholder="Search by name, company, email or phone"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          style={{ width: 'min(340px, 100%)' }}
+          style={{ width: 'min(360px, 100%)' }}
         />
         <Select
-          aria-label="Client segment filter"
-          value={segment}
-          onChange={(event) =>
-            setSegment(event.target.value as 'all' | 'with_outstanding' | 'over_10000')
-          }
+          aria-label="Customer type filter"
+          value={customerType}
+          onChange={(event) => setCustomerType(event.target.value as TypeFilter)}
           options={[
-            { label: 'All Views', value: 'all' },
-            { label: 'With Outstanding', value: 'with_outstanding' },
-            { label: 'Outstanding >= R10,000', value: 'over_10000' },
+            { label: 'All Types', value: 'all' },
+            { label: 'Business', value: 'business' },
+            { label: 'Individual', value: 'individual' },
           ]}
-          style={{ width: 220 }}
+          style={{ width: 180 }}
         />
         <Select
-          aria-label="Client status filter"
-          value={status}
-          onChange={(event) => setStatus(event.target.value as 'all' | 'active' | 'inactive')}
+          aria-label="Customer segment filter"
+          value={segment}
+          onChange={(event) => setSegment(event.target.value as SegmentFilter)}
           options={[
-            { label: 'All statuses', value: 'all' },
+            { label: 'All Segments', value: 'all' },
+            { label: 'With Outstanding', value: 'with_outstanding' },
+            { label: 'Outstanding >= R10,000', value: 'high_outstanding' },
+          ]}
+          style={{ width: 230 }}
+        />
+        <Select
+          aria-label="Customer status filter"
+          value={status}
+          onChange={(event) => setStatus(event.target.value as StatusFilter)}
+          options={[
+            { label: 'All Statuses', value: 'all' },
             { label: 'Active', value: 'active' },
             { label: 'Inactive', value: 'inactive' },
           ]}
           style={{ width: 170 }}
         />
         <Select
-          aria-label="Sort clients"
+          aria-label="Sort customers"
           value={sort}
-          onChange={(event) =>
-            setSort(event.target.value as 'recent' | 'outstanding_desc' | 'name_asc')
-          }
+          onChange={(event) => setSort(event.target.value as SortFilter)}
           options={[
             { label: 'Sort: Recent Activity', value: 'recent' },
             { label: 'Sort: Outstanding High', value: 'outstanding_desc' },
-            { label: 'Sort: Client Name A-Z', value: 'name_asc' },
+            { label: 'Sort: Name A-Z', value: 'name_asc' },
           ]}
-          style={{ width: 220 }}
+          style={{ width: 210 }}
         />
-        <Button size="sm" variant="ghost">
-          Export
-        </Button>
       </FilterBar>
+
+      {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
 
       {loading ? (
         <div className="dl-card" style={{ display: 'grid', gap: 12 }}>
@@ -116,39 +203,56 @@ export function ClientsListPage() {
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="No clients found"
-          description="Try adjusting your filters or add a new client profile."
-          action={<Button variant="primary">Create Client</Button>}
+          title="No customers found"
+          description="Try adjusting your filters or create a new customer profile."
+          action={
+            <Link to="/clients/new">
+              <Button variant="primary">Create Customer</Button>
+            </Link>
+          }
         />
       ) : (
         <>
           <ResponsiveList
-            headers={['Client', 'Contact', 'Status', 'Outstanding', 'Last Activity', 'Actions']}
+            headers={[
+              'Customer',
+              'Company',
+              'Email',
+              'Work Phone',
+              'Receivables',
+              'Unused Credits',
+              'Status',
+              'Actions',
+            ]}
             desktopRows={
               <>
                 {filtered.map((client) => (
                   <tr key={client.id}>
                     <td>
-                      <strong>{client.name}</strong>
+                      <strong>{client.displayName}</strong>
                       <div className="dl-muted" style={{ fontSize: 12 }}>
-                        {client.email}
+                        {client.customerType === 'business' ? 'Business' : 'Individual'}
                       </div>
                     </td>
-                    <td>
-                      {client.contactName}
-                      <div className="dl-muted" style={{ fontSize: 12 }}>
-                        {client.phone}
-                      </div>
-                    </td>
+                    <td>{client.companyName || '—'}</td>
+                    <td>{client.email || '—'}</td>
+                    <td>{client.workPhone}</td>
+                    <td>{formatCurrency(client.outstandingBalance)}</td>
+                    <td>{formatCurrency(client.unusedCredits)}</td>
                     <td>
                       <Badge variant={client.status === 'active' ? 'success' : 'neutral'}>
                         {client.status === 'active' ? 'Active' : 'Inactive'}
                       </Badge>
                     </td>
-                    <td>{formatCurrency(client.outstandingBalance)}</td>
-                    <td>{formatDate(client.lastActivityAt)}</td>
                     <td>
-                      <Link to={`/clients/${client.id}`}>Open Client</Link>
+                      <div className="dl-inline-actions">
+                        <RowActionsMenu
+                          clientId={client.id}
+                          displayName={client.displayName}
+                          isDeleting={deletingClientId === client.id}
+                          onDelete={handleDeleteClient}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -160,27 +264,42 @@ export function ClientsListPage() {
                   <article key={client.id} className="dl-mobile-item">
                     <div className="dl-mobile-item-header">
                       <div>
-                        <strong>{client.name}</strong>
+                        <strong>{client.displayName}</strong>
                         <div className="dl-muted" style={{ fontSize: 12 }}>
-                          {client.email}
+                          {client.companyName || client.customerType}
                         </div>
                       </div>
                       <Badge variant={client.status === 'active' ? 'success' : 'neutral'}>
                         {client.status === 'active' ? 'Active' : 'Inactive'}
                       </Badge>
                     </div>
+
                     <div className="dl-mobile-meta">
                       <div>
-                        <span>Outstanding</span>
+                        <span>Receivables</span>
                         <div>{formatCurrency(client.outstandingBalance)}</div>
+                      </div>
+                      <div>
+                        <span>Unused Credits</span>
+                        <div>{formatCurrency(client.unusedCredits)}</div>
+                      </div>
+                      <div>
+                        <span>Email</span>
+                        <div>{client.email || '—'}</div>
                       </div>
                       <div>
                         <span>Last Activity</span>
                         <div>{formatDate(client.lastActivityAt)}</div>
                       </div>
                     </div>
-                    <div style={{ marginTop: 12 }}>
-                      <Link to={`/clients/${client.id}`}>Open details</Link>
+
+                    <div className="dl-inline-actions" style={{ marginTop: 12 }}>
+                      <RowActionsMenu
+                        clientId={client.id}
+                        displayName={client.displayName}
+                        isDeleting={deletingClientId === client.id}
+                        onDelete={handleDeleteClient}
+                      />
                     </div>
                   </article>
                 ))}
@@ -188,10 +307,128 @@ export function ClientsListPage() {
             }
           />
           <div className="dl-list-footer">
-            Showing {filtered.length} clients · Page 1 of 1
+            Showing {filtered.length} customers · Page 1 of 1
           </div>
         </>
       )}
     </>
+  );
+}
+
+interface RowActionsMenuProps {
+  clientId: string;
+  displayName: string;
+  isDeleting: boolean;
+  onDelete: (clientId: string, displayName: string) => Promise<void>;
+}
+
+function RowActionsMenu({ clientId, displayName, isDeleting, onDelete }: RowActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  const updatePopoverPosition = () => {
+    if (!rootRef.current) return;
+
+    const triggerRect = rootRef.current.getBoundingClientRect();
+    const menuWidth = 176;
+    const estimatedMenuHeight = 132;
+    const viewportPadding = 8;
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const shouldOpenUp = spaceBelow < estimatedMenuHeight + viewportPadding;
+
+    const top = shouldOpenUp
+      ? Math.max(viewportPadding, triggerRect.top - estimatedMenuHeight - 6)
+      : Math.min(window.innerHeight - estimatedMenuHeight - viewportPadding, triggerRect.bottom + 6);
+    const left = Math.max(
+      viewportPadding,
+      Math.min(window.innerWidth - menuWidth - viewportPadding, triggerRect.right - menuWidth),
+    );
+
+    setPopoverStyle({
+      position: 'fixed',
+      top,
+      left,
+      width: menuWidth,
+      zIndex: 120,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      const clickedTrigger = rootRef.current?.contains(target);
+      const clickedPopover = popoverRef.current?.contains(target);
+      if (!clickedTrigger && !clickedPopover) {
+        setOpen(false);
+      }
+    };
+    const handleViewportChange = () => updatePopoverPosition();
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [open]);
+
+  const handleDelete = async () => {
+    setOpen(false);
+    await onDelete(clientId, displayName);
+  };
+
+  return (
+    <div className="dl-row-action-menu" ref={rootRef}>
+      <IconButton
+        icon="⋯"
+        label="Row actions"
+        className="dl-row-action-trigger"
+        onClick={() => setOpen((previous) => !previous)}
+      />
+      {open && popoverStyle
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className="dl-row-action-popover"
+              role="menu"
+              aria-label={`Actions for ${displayName}`}
+              style={popoverStyle}
+            >
+              <Link
+                to={`/clients/${clientId}`}
+                className="dl-row-action-item"
+                onClick={() => setOpen(false)}
+              >
+                View Details
+              </Link>
+              <Link
+                to={`/clients/${clientId}/edit`}
+                className="dl-row-action-item"
+                onClick={() => setOpen(false)}
+              >
+                Edit
+              </Link>
+              <button
+                type="button"
+                className="dl-row-action-item danger"
+                onClick={() => void handleDelete()}
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
   );
 }

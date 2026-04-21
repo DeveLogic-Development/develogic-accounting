@@ -1,5 +1,7 @@
-import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { createId } from '@/modules/accounting/domain/id';
+import { useNotificationsContext } from '@/modules/notifications/state/NotificationsContext';
+import { canUseSupabaseRuntimeState, loadRuntimeState, saveRuntimeState } from '@/lib/supabase/runtime-state';
 import { createTemplatesSeedState } from '../data/seed';
 import { LocalStorageTemplatesRepository } from '../data/localStorageRepository';
 import { createDefaultTemplateConfigForType } from '../domain/defaults';
@@ -57,6 +59,7 @@ interface TemplatesContextValue {
 
 const repository = new LocalStorageTemplatesRepository();
 const TemplatesContext = createContext<TemplatesContextValue | undefined>(undefined);
+const REMOTE_STATE_KEY = 'templates';
 
 function isTemplatesState(value: unknown): value is TemplatesState {
   if (!value || typeof value !== 'object') return false;
@@ -79,6 +82,8 @@ function summarizeValidationIssues(issues: TemplateValidationIssue[]): string {
 
 export function TemplatesProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<TemplatesState>(createInitialState);
+  const notifications = useNotificationsContext();
+  const [remoteHydrationComplete, setRemoteHydrationComplete] = useState(!canUseSupabaseRuntimeState());
 
   const commit = (updater: (previous: TemplatesState) => TemplatesState) => {
     setState((previous) => {
@@ -92,6 +97,28 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
     () => state.templates.map((template) => toTemplateListRow(template, state.versions)),
     [state.templates, state.versions],
   );
+
+  useEffect(() => {
+    if (!canUseSupabaseRuntimeState()) return;
+
+    let active = true;
+    loadRuntimeState<TemplatesState>(REMOTE_STATE_KEY).then((result) => {
+      if (!active) return;
+      if (result.ok && result.data && isTemplatesState(result.data)) {
+        setState(result.data);
+      }
+      setRemoteHydrationComplete(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!remoteHydrationComplete || !canUseSupabaseRuntimeState()) return;
+    void saveRuntimeState(REMOTE_STATE_KEY, state);
+  }, [remoteHydrationComplete, state]);
 
   const contextValue: TemplatesContextValue = {
     state,
@@ -161,6 +188,19 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
         versions: [version, ...previous.versions],
       }));
 
+      notifications.notify({
+        level: 'success',
+        source: 'templates',
+        title: 'Template Created',
+        message: `${template.name} draft is ready.`,
+        persistent: true,
+        toast: true,
+        route: `/templates/${template.id}/editor`,
+        relatedEntityType: 'template',
+        relatedEntityId: template.id,
+        dedupeKey: `template:${template.id}:created`,
+      });
+
       return { ok: true, data: template };
     },
     updateTemplateDraft: (payload) => {
@@ -199,6 +239,18 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
           versions: previous.versions.map((entry) => (entry.id === nextDraft.id ? nextDraft : entry)),
         }));
 
+        notifications.notify({
+          level: 'success',
+          source: 'templates',
+          title: 'Template Draft Saved',
+          message: `${nextTemplate.name} changes were saved.`,
+          persistent: false,
+          toast: true,
+          route: `/templates/${nextTemplate.id}/editor`,
+          relatedEntityType: 'template',
+          relatedEntityId: nextTemplate.id,
+        });
+
         return { ok: true, data: nextDraft };
       }
 
@@ -222,6 +274,18 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
         ),
         versions: [mutation.newVersion, ...previous.versions],
       }));
+
+      notifications.notify({
+        level: 'success',
+        source: 'templates',
+        title: 'Template Draft Saved',
+        message: `${mutation.template.name} draft version v${mutation.newVersion.versionNumber} was created.`,
+        persistent: false,
+        toast: true,
+        route: `/templates/${mutation.template.id}/editor`,
+        relatedEntityType: 'template',
+        relatedEntityId: mutation.template.id,
+      });
 
       return { ok: true, data: mutation.newVersion };
     },
@@ -259,6 +323,19 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
           entry.id === draftVersion.id ? published.version : entry,
         ),
       }));
+
+      notifications.notify({
+        level: 'success',
+        source: 'templates',
+        title: 'Template Published',
+        message: `${published.template.name} published as v${published.version.versionNumber}.`,
+        persistent: true,
+        toast: true,
+        route: `/templates/${published.template.id}/editor`,
+        relatedEntityType: 'template',
+        relatedEntityId: published.template.id,
+        dedupeKey: `template:${published.template.id}:published:v${published.version.versionNumber}`,
+      });
 
       return { ok: true, data: published.version };
     },
@@ -307,6 +384,18 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
         versions: [duplicatedVersion, ...previous.versions],
       }));
 
+      notifications.notify({
+        level: 'info',
+        source: 'templates',
+        title: 'Template Duplicated',
+        message: `${sourceTemplate.name} was copied to ${duplicatedTemplate.name}.`,
+        persistent: false,
+        toast: true,
+        route: `/templates/${duplicatedTemplate.id}/editor`,
+        relatedEntityType: 'template',
+        relatedEntityId: duplicatedTemplate.id,
+      });
+
       return { ok: true, data: duplicatedTemplate };
     },
     archiveTemplate: (templateId) => {
@@ -330,6 +419,18 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
           entry.id === template.id ? archivedTemplate : entry,
         ),
       }));
+
+      notifications.notify({
+        level: 'warning',
+        source: 'templates',
+        title: 'Template Archived',
+        message: `${archivedTemplate.name} is now archived.`,
+        persistent: true,
+        toast: true,
+        route: '/templates',
+        relatedEntityType: 'template',
+        relatedEntityId: archivedTemplate.id,
+      });
 
       return { ok: true, data: archivedTemplate };
     },
@@ -356,6 +457,17 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
       }));
 
       const nextTemplate = state.templates.find((entry) => entry.id === templateId) ?? template;
+      notifications.notify({
+        level: 'success',
+        source: 'templates',
+        title: 'Default Template Updated',
+        message: `${template.name} is now the default ${documentType} template.`,
+        persistent: false,
+        toast: true,
+        route: `/templates/${template.id}/editor`,
+        relatedEntityType: 'template',
+        relatedEntityId: template.id,
+      });
       return { ok: true, data: nextTemplate };
     },
     saveLogoAsset: (input) => {
@@ -377,6 +489,16 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
         ...previous,
         logoAssets: [logoAsset, ...previous.logoAssets],
       }));
+
+      notifications.notify({
+        level: 'success',
+        source: 'templates',
+        title: 'Logo Added',
+        message: `${logoAsset.name} is available for template branding.`,
+        persistent: false,
+        toast: true,
+        route: '/templates',
+      });
 
       return { ok: true, data: logoAsset };
     },

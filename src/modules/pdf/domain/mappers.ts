@@ -1,5 +1,6 @@
 import { calculateDocumentTotals, deriveInvoicePaymentSummary } from '@/modules/accounting/domain/calculations';
 import { Invoice, Quote } from '@/modules/accounting/domain/types';
+import { BusinessSettings, splitAddressLines } from '@/modules/settings/domain/business-settings';
 import { buildPreviewPayloadFromInvoice, buildPreviewPayloadFromQuote, buildPreviewRowsFromDomainItems } from '@/modules/templates/domain/preview-builders';
 import { DocumentTemplate, DocumentTemplateVersion } from '@/modules/templates/domain/types';
 import { DocumentRenderSnapshot, PdfDocumentType, PdfVersionContext } from './types';
@@ -8,6 +9,7 @@ interface SnapshotInputBase {
   capturedAt: string;
   template: DocumentTemplate;
   templateVersion: DocumentTemplateVersion;
+  businessSettings?: BusinessSettings;
   client?: {
     name: string;
     contactName?: string;
@@ -18,8 +20,18 @@ interface SnapshotInputBase {
 }
 
 export function mapQuoteToRenderSnapshot(input: SnapshotInputBase & { quote: Quote }): DocumentRenderSnapshot {
-  const { quote, template, templateVersion, capturedAt, client } = input;
+  const { quote, template, templateVersion, capturedAt, client, businessSettings } = input;
   const totals = calculateDocumentTotals(quote.items, quote.documentDiscountPercent);
+  const templateConfig = {
+    ...templateVersion.config,
+    branding: {
+      ...templateVersion.config.branding,
+      primaryColor: businessSettings?.brandColor ?? templateVersion.config.branding.primaryColor,
+      logoUrl: businessSettings?.logoDataUrl ?? templateVersion.config.branding.logoUrl,
+      logoAssetId: businessSettings?.logoAssetId ?? templateVersion.config.branding.logoAssetId,
+    },
+  };
+  const businessAddressLines = splitAddressLines(businessSettings?.address ?? '');
 
   return {
     renderSchemaVersion: 1,
@@ -36,7 +48,7 @@ export function mapQuoteToRenderSnapshot(input: SnapshotInputBase & { quote: Quo
       versionId: templateVersion.id,
       name: template.name,
       versionNumber: templateVersion.versionNumber,
-      config: templateVersion.config,
+      config: templateConfig,
     },
     previewPayload: buildPreviewPayloadFromQuote({
       quoteNumber: quote.quoteNumber,
@@ -51,14 +63,33 @@ export function mapQuoteToRenderSnapshot(input: SnapshotInputBase & { quote: Quo
       clientEmail: client?.email,
       clientPhone: client?.phone,
       clientAddressLines: client?.addressLines,
+      business: {
+        name: businessSettings?.businessName ?? 'DeveLogic Digital',
+        contactName: businessSettings?.senderName,
+        email: businessSettings?.email,
+        phone: businessSettings?.phone,
+        addressLines: businessAddressLines.length > 0 ? businessAddressLines : undefined,
+        registrationNumber: businessSettings?.registrationNumber,
+        taxNumber: businessSettings?.vatNumber,
+      },
     }),
   };
 }
 
 export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice: Invoice; payments: Array<{ invoiceId: string; amountMinor: number }> }): DocumentRenderSnapshot {
-  const { invoice, template, templateVersion, payments, capturedAt, client } = input;
+  const { invoice, template, templateVersion, payments, capturedAt, client, businessSettings } = input;
   const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);
   const paymentSummary = deriveInvoicePaymentSummary(invoice, payments, capturedAt);
+  const templateConfig = {
+    ...templateVersion.config,
+    branding: {
+      ...templateVersion.config.branding,
+      primaryColor: businessSettings?.brandColor ?? templateVersion.config.branding.primaryColor,
+      logoUrl: businessSettings?.logoDataUrl ?? templateVersion.config.branding.logoUrl,
+      logoAssetId: businessSettings?.logoAssetId ?? templateVersion.config.branding.logoAssetId,
+    },
+  };
+  const businessAddressLines = splitAddressLines(businessSettings?.address ?? '');
 
   return {
     renderSchemaVersion: 1,
@@ -75,7 +106,7 @@ export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice:
       versionId: templateVersion.id,
       name: template.name,
       versionNumber: templateVersion.versionNumber,
-      config: templateVersion.config,
+      config: templateConfig,
     },
     previewPayload: buildPreviewPayloadFromInvoice({
       invoiceNumber: invoice.invoiceNumber,
@@ -92,6 +123,15 @@ export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice:
       clientEmail: client?.email,
       clientPhone: client?.phone,
       clientAddressLines: client?.addressLines,
+      business: {
+        name: businessSettings?.businessName ?? 'DeveLogic Digital',
+        contactName: businessSettings?.senderName,
+        email: businessSettings?.email,
+        phone: businessSettings?.phone,
+        addressLines: businessAddressLines.length > 0 ? businessAddressLines : undefined,
+        registrationNumber: businessSettings?.registrationNumber,
+        taxNumber: businessSettings?.vatNumber,
+      },
     }),
   };
 }

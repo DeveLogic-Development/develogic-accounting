@@ -1,4 +1,3 @@
-import { quoteLineItems } from '@/mocks/data';
 import { calculateDocumentTotals } from '@/modules/accounting/domain/calculations';
 import { toMinor } from '@/modules/accounting/domain/money';
 import {
@@ -8,8 +7,35 @@ import {
 } from './preview-builders';
 import { TemplatePreviewPayload } from './types';
 
+const previewLineItems = [
+  {
+    itemName: 'Monthly Accounting Retainer',
+    description: 'Monthly bookkeeping and finance reporting',
+    quantity: 1,
+    unitPrice: 18500,
+    discountPercent: 0,
+    taxRate: 15,
+  },
+  {
+    itemName: 'Payroll Processing',
+    description: 'Payroll processing for 35 employees',
+    quantity: 1,
+    unitPrice: 4200,
+    discountPercent: 0,
+    taxRate: 15,
+  },
+  {
+    itemName: 'Advisory Strategy Session',
+    description: 'Quarterly planning workshop',
+    quantity: 1,
+    unitPrice: 7500,
+    discountPercent: 10,
+    taxRate: 15,
+  },
+];
+
 function makeDomainLineItems() {
-  return quoteLineItems.map((item, index) => ({
+  return previewLineItems.map((item, index) => ({
     id: `preview_item_${index + 1}`,
     itemName: item.itemName,
     description: item.description,

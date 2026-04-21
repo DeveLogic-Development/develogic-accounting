@@ -46,7 +46,10 @@ set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
-alter table storage.objects enable row level security;
+-- Note: `storage.objects` is managed by Supabase and may not be owned by the
+-- migration role used by `supabase db push` on hosted projects.
+-- RLS is already enabled on this table in Supabase-managed environments, so we
+-- intentionally avoid altering table ownership-level settings here.
 
 -- Read access: any business member can read files in that business folder.
 drop policy if exists storage_select_branding_assets on storage.objects;

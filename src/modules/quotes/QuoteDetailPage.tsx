@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { clients } from '@/mocks/data';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
@@ -21,6 +20,7 @@ import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
 import { useEmails } from '@/modules/emails/hooks/useEmails';
 import { EmailComposeModal } from '@/modules/emails/components/EmailComposeModal';
 import { EmailComposeDraft } from '@/modules/emails/domain/types';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 
 const QUICK_ACTION_TRANSITIONS: Array<{
   status: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired';
@@ -37,6 +37,7 @@ export function QuoteDetailPage() {
   const navigate = useNavigate();
   const { quoteId } = useParams();
   const { getQuoteById, transitionQuote, convertQuoteToInvoice, duplicateQuote } = useAccounting();
+  const { getClientById } = useMasterData();
   const { getTemplateById, getTemplateVersionById } = useTemplates();
   const {
     generateQuotePdf,
@@ -75,7 +76,7 @@ export function QuoteDetailPage() {
   }
 
   const totals = calculateDocumentTotals(quote.items, quote.documentDiscountPercent);
-  const client = clients.find((entry) => entry.id === quote.clientId);
+  const client = getClientById(quote.clientId);
   const template = getTemplateById(quote.templateId ?? '');
   const templateVersion = getTemplateVersionById(quote.templateVersionId);
   const editable = canEditQuote(quote.status).allowed;
@@ -86,6 +87,11 @@ export function QuoteDetailPage() {
   const latestDraftPdf = pdfRecords.find((record) => !record.immutable);
   const emailLogs = getLogsForDocument({ documentType: 'quote', documentId: quote.id });
   const recentEmailLogs = emailLogs.slice(0, 3);
+  const sendDisabledReason = emailCapabilityLoading
+    ? 'Checking email capability...'
+    : !canSendEmails
+      ? (emailAvailabilityMessage ?? 'Email sending is currently unavailable.')
+      : undefined;
 
   const availableTransitionButtons = useMemo(
     () => QUICK_ACTION_TRANSITIONS.filter((entry) => transitions.includes(entry.status)),
@@ -101,8 +107,7 @@ export function QuoteDetailPage() {
   );
 
   const handleTransition = (target: 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired') => {
-    const note = target === 'rejected' ? window.prompt('Optional rejection note') ?? undefined : undefined;
-    const result = transitionQuote(quote.id, target, note);
+    const result = transitionQuote(quote.id, target);
     setNotice({
       tone: result.ok ? 'success' : 'error',
       text: result.ok ? `Quote marked as ${target}.` : result.error ?? 'Action failed.',
@@ -241,6 +246,7 @@ export function QuoteDetailPage() {
               variant="primary"
               onClick={handleOpenSendDialog}
               disabled={!canSendEmails || emailCapabilityLoading}
+              title={sendDisabledReason}
             >
               {emailCapabilityLoading ? 'Checking Email...' : 'Send Quote Email'}
             </Button>
@@ -384,7 +390,12 @@ export function QuoteDetailPage() {
                 </div>
               ))}
               <div className="dl-inline-actions">
-                <Button size="sm" onClick={handleOpenSendDialog} disabled={!canSendEmails || emailCapabilityLoading}>
+                <Button
+                  size="sm"
+                  onClick={handleOpenSendDialog}
+                  disabled={!canSendEmails || emailCapabilityLoading}
+                  title={sendDisabledReason}
+                >
                   Compose and Send
                 </Button>
                 <Link to="/emails/history">

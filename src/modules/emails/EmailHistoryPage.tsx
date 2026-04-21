@@ -42,6 +42,11 @@ export function EmailHistoryPage() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeNotice, setComposeNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const resendDisabledReason = emailCapabilityLoading
+    ? 'Checking email capability...'
+    : !canSendEmails
+      ? (emailAvailabilityMessage ?? 'Email sending is currently unavailable.')
+      : undefined;
 
   const filtered = useMemo(
     () => {
@@ -128,6 +133,7 @@ export function EmailHistoryPage() {
               variant="secondary"
               onClick={() => openResend(filtered[0].id)}
               disabled={!canSendEmails || emailCapabilityLoading}
+              title={resendDisabledReason}
             >
               {emailCapabilityLoading ? 'Checking Email...' : 'Resend Most Recent'}
             </Button>
@@ -244,6 +250,7 @@ export function EmailHistoryPage() {
                         size="sm"
                         onClick={() => openResend(entry.id)}
                         disabled={!canSendEmails || emailCapabilityLoading}
+                        title={resendDisabledReason}
                       >
                         Resend
                       </Button>
@@ -271,7 +278,12 @@ export function EmailHistoryPage() {
                         Open Document
                       </Button>
                     </Link>
-                    <Button size="sm" onClick={() => openResend(entry.id)} disabled={!canSendEmails || emailCapabilityLoading}>
+                    <Button
+                      size="sm"
+                      onClick={() => openResend(entry.id)}
+                      disabled={!canSendEmails || emailCapabilityLoading}
+                      title={resendDisabledReason}
+                    >
                       Resend
                     </Button>
                   </div>

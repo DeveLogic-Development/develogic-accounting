@@ -1,8 +1,11 @@
-import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
-import { clients } from '@/mocks/data';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { createId } from '@/modules/accounting/domain/id';
 import { useAccountingContext } from '@/modules/accounting/state/AccountingContext';
 import { useTemplatesContext } from '@/modules/templates/state/TemplatesContext';
+import { useNotificationsContext } from '@/modules/notifications/state/NotificationsContext';
+import { useBusinessSettings } from '@/modules/settings/hooks/useBusinessSettings';
+import { canUseSupabaseRuntimeState, loadRuntimeState, saveRuntimeState } from '@/lib/supabase/runtime-state';
+import { useMasterDataContext } from '@/modules/master-data/state/MasterDataContext';
 import { createPdfArchiveSeedState } from '../data/seed';
 import { LocalStoragePdfArchiveRepository } from '../data/localStorageRepository';
 import { blobToDataUrl, buildPdfFileMetadata, computeBlobChecksum } from '../domain/file';
@@ -46,6 +49,7 @@ interface PdfArchiveContextValue {
 
 const repository = new LocalStoragePdfArchiveRepository();
 const PdfArchiveContext = createContext<PdfArchiveContextValue | undefined>(undefined);
+const REMOTE_STATE_KEY = 'pdf_archive';
 
 function isPdfArchiveState(value: unknown): value is PdfArchiveState {
   if (!value || typeof value !== 'object') return false;
@@ -58,29 +62,14 @@ function createInitialState(): PdfArchiveState {
   return isPdfArchiveState(loaded) ? loaded : createPdfArchiveSeedState();
 }
 
-function resolveClient(clientId: string): {
-  name: string;
-  contactName?: string;
-  email?: string;
-  phone?: string;
-} {
-  const client = clients.find((entry) => entry.id === clientId);
-  if (!client) {
-    return { name: clientId };
-  }
-
-  return {
-    name: client.name,
-    contactName: client.contactName,
-    email: client.email,
-    phone: client.phone,
-  };
-}
-
 export function PdfArchiveProvider({ children }: { children: ReactNode }) {
   const accounting = useAccountingContext();
   const templates = useTemplatesContext();
+  const notifications = useNotificationsContext();
+  const businessSettings = useBusinessSettings();
+  const masterData = useMasterDataContext();
   const [state, setState] = useState<PdfArchiveState>(createInitialState);
+  const [remoteHydrationComplete, setRemoteHydrationComplete] = useState(!canUseSupabaseRuntimeState());
 
   const commit = (updater: (previous: PdfArchiveState) => PdfArchiveState) => {
     setState((previous) => {
@@ -113,6 +102,28 @@ export function PdfArchiveProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
     [state.records],
   );
+
+  useEffect(() => {
+    if (!canUseSupabaseRuntimeState()) return;
+
+    let active = true;
+    loadRuntimeState<PdfArchiveState>(REMOTE_STATE_KEY).then((result) => {
+      if (!active) return;
+      if (result.ok && result.data && isPdfArchiveState(result.data)) {
+        setState(result.data);
+      }
+      setRemoteHydrationComplete(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!remoteHydrationComplete || !canUseSupabaseRuntimeState()) return;
+    void saveRuntimeState(REMOTE_STATE_KEY, state);
+  }, [remoteHydrationComplete, state]);
 
   const contextValue: PdfArchiveContextValue = {
     state,
@@ -162,7 +173,17 @@ export function PdfArchiveProvider({ children }: { children: ReactNode }) {
         template,
         templateVersion,
         capturedAt: nowIso,
-        client: resolveClient(quote.clientId),
+        businessSettings,
+        client: (() => {
+          const client = masterData.getClientById(quote.clientId);
+          if (!client) return { name: quote.clientId };
+          return {
+            name: client.name,
+            contactName: client.contactName,
+            email: client.email,
+            phone: client.phone,
+          };
+        })(),
       });
 
       try {
@@ -214,11 +235,38 @@ export function PdfArchiveProvider({ children }: { children: ReactNode }) {
           return { ok: false, error: 'PDF archive record creation failed.' };
         }
 
+        notifications.notify({
+          level: 'success',
+          source: 'pdf',
+          title: statusPolicy.immutable ? 'Archived PDF Created' : 'Draft PDF Generated',
+          message: `${createdRecord.file.fileName} is ready.`,
+          persistent: statusPolicy.immutable,
+          toast: true,
+          route: '/pdf-archive',
+          relatedEntityType: 'pdf_archive',
+          relatedEntityId: createdRecord.id,
+          dedupeKey: `pdf:${createdRecord.documentReference.documentType}:${createdRecord.documentReference.documentId}:v${createdRecord.revision}`,
+        });
+
         return { ok: true, data: createdRecord };
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Quote PDF generation failed.';
+        notifications.notify({
+          level: 'error',
+          source: 'pdf',
+          title: 'Quote PDF Generation Failed',
+          message: errorMessage,
+          persistent: true,
+          toast: true,
+          route: `/quotes/${quote.id}`,
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+          dedupeKey: `pdf-error:quote:${quote.id}`,
+        });
+
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Quote PDF generation failed.',
+          error: errorMessage,
         };
       }
     },
@@ -256,8 +304,18 @@ export function PdfArchiveProvider({ children }: { children: ReactNode }) {
         template,
         templateVersion,
         capturedAt: nowIso,
+        businessSettings,
         payments: accounting.state.payments,
-        client: resolveClient(invoice.clientId),
+        client: (() => {
+          const client = masterData.getClientById(invoice.clientId);
+          if (!client) return { name: invoice.clientId };
+          return {
+            name: client.name,
+            contactName: client.contactName,
+            email: client.email,
+            phone: client.phone,
+          };
+        })(),
       });
 
       try {
@@ -309,11 +367,38 @@ export function PdfArchiveProvider({ children }: { children: ReactNode }) {
           return { ok: false, error: 'PDF archive record creation failed.' };
         }
 
+        notifications.notify({
+          level: 'success',
+          source: 'pdf',
+          title: statusPolicy.immutable ? 'Archived PDF Created' : 'Draft PDF Generated',
+          message: `${createdRecord.file.fileName} is ready.`,
+          persistent: statusPolicy.immutable,
+          toast: true,
+          route: '/pdf-archive',
+          relatedEntityType: 'pdf_archive',
+          relatedEntityId: createdRecord.id,
+          dedupeKey: `pdf:${createdRecord.documentReference.documentType}:${createdRecord.documentReference.documentId}:v${createdRecord.revision}`,
+        });
+
         return { ok: true, data: createdRecord };
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Invoice PDF generation failed.';
+        notifications.notify({
+          level: 'error',
+          source: 'pdf',
+          title: 'Invoice PDF Generation Failed',
+          message: errorMessage,
+          persistent: true,
+          toast: true,
+          route: `/invoices/${invoice.id}`,
+          relatedEntityType: 'invoice',
+          relatedEntityId: invoice.id,
+          dedupeKey: `pdf-error:invoice:${invoice.id}`,
+        });
+
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Invoice PDF generation failed.',
+          error: errorMessage,
         };
       }
     },

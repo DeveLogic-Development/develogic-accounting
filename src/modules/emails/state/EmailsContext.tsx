@@ -1,11 +1,14 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { appConfig } from '@/config/appConfig';
-import { clients } from '@/mocks/data';
 import { Invoice, Quote } from '@/modules/accounting/domain/types';
 import { calculateDocumentTotals } from '@/modules/accounting/domain/calculations';
 import { useAccountingContext } from '@/modules/accounting/state/AccountingContext';
 import { usePdfArchiveContext } from '@/modules/pdf/state/PdfArchiveContext';
+import { useNotificationsContext } from '@/modules/notifications/state/NotificationsContext';
+import { useBusinessSettings } from '@/modules/settings/hooks/useBusinessSettings';
+import { canUseSupabaseRuntimeState, loadRuntimeState, saveRuntimeState } from '@/lib/supabase/runtime-state';
 import { formatMinorCurrency } from '@/utils/format';
+import { useMasterDataContext } from '@/modules/master-data/state/MasterDataContext';
 import { createEmailSeedState } from '../data/seed';
 import { LocalStorageEmailsRepository } from '../data/localStorageRepository';
 import { mapPdfRecordToAttachmentReference, resolveAttachmentRecordForSend } from '../domain/attachments';
@@ -58,6 +61,7 @@ interface EmailsContextValue {
 
 const repository = new LocalStorageEmailsRepository();
 const EmailsContext = createContext<EmailsContextValue | undefined>(undefined);
+const REMOTE_STATE_KEY = 'emails';
 
 function isEmailsState(value: unknown): value is EmailsState {
   if (!value || typeof value !== 'object') return false;
@@ -70,21 +74,18 @@ function createInitialState(): EmailsState {
   return isEmailsState(loaded) ? loaded : createEmailSeedState();
 }
 
-function findClient(clientId: string) {
-  return clients.find((entry) => entry.id === clientId);
-}
-
 function buildDefaultDraftFromQuote(input: {
   quote: Quote;
+  client?: { name: string; email?: string };
   latestImmutablePdfId?: string;
+  businessName: string;
 }): EmailComposeDraft {
   const quote = input.quote;
-  const client = findClient(quote.clientId);
   const totals = calculateDocumentTotals(quote.items, quote.documentDiscountPercent);
 
   const payload = {
-    businessName: 'DeveLogic Digital',
-    clientName: client?.name ?? quote.clientId,
+    businessName: input.businessName,
+    clientName: input.client?.name ?? quote.clientId,
     documentNumber: quote.quoteNumber,
     issueDate: quote.issueDate,
     expiryDate: quote.expiryDate,
@@ -100,11 +101,11 @@ function buildDefaultDraftFromQuote(input: {
       documentNumber: quote.quoteNumber,
       documentStatus: quote.status,
       clientId: quote.clientId,
-      clientName: client?.name ?? quote.clientId,
+      clientName: input.client?.name ?? quote.clientId,
     },
     templateKind,
     recipient: {
-      to: client?.email ?? '',
+      to: input.client?.email ?? '',
     },
     subject: buildDefaultEmailSubject(templateKind, payload),
     body: buildDefaultEmailBody(templateKind, payload),
@@ -114,15 +115,16 @@ function buildDefaultDraftFromQuote(input: {
 
 function buildDefaultDraftFromInvoice(input: {
   invoice: Invoice;
+  client?: { name: string; email?: string };
   latestImmutablePdfId?: string;
+  businessName: string;
 }): EmailComposeDraft {
   const invoice = input.invoice;
-  const client = findClient(invoice.clientId);
   const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);
 
   const payload = {
-    businessName: 'DeveLogic Digital',
-    clientName: client?.name ?? invoice.clientId,
+    businessName: input.businessName,
+    clientName: input.client?.name ?? invoice.clientId,
     documentNumber: invoice.invoiceNumber,
     issueDate: invoice.issueDate,
     dueDate: invoice.dueDate,
@@ -138,11 +140,11 @@ function buildDefaultDraftFromInvoice(input: {
       documentNumber: invoice.invoiceNumber,
       documentStatus: invoice.status,
       clientId: invoice.clientId,
-      clientName: client?.name ?? invoice.clientId,
+      clientName: input.client?.name ?? invoice.clientId,
     },
     templateKind,
     recipient: {
-      to: client?.email ?? '',
+      to: input.client?.email ?? '',
     },
     subject: buildDefaultEmailSubject(templateKind, payload),
     body: buildDefaultEmailBody(templateKind, payload),
@@ -153,7 +155,11 @@ function buildDefaultDraftFromInvoice(input: {
 export function EmailsProvider({ children }: { children: ReactNode }) {
   const accounting = useAccountingContext();
   const pdfArchive = usePdfArchiveContext();
+  const notifications = useNotificationsContext();
+  const businessSettings = useBusinessSettings();
+  const masterData = useMasterDataContext();
   const [state, setState] = useState<EmailsState>(createInitialState);
+  const [remoteHydrationComplete, setRemoteHydrationComplete] = useState(!canUseSupabaseRuntimeState());
   const [emailCapability, setEmailCapability] = useState<EmailCapability>({
     canSend: false,
     mode: 'unknown',
@@ -203,6 +209,28 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
     [state.logs],
   );
 
+  useEffect(() => {
+    if (!canUseSupabaseRuntimeState()) return;
+
+    let active = true;
+    loadRuntimeState<EmailsState>(REMOTE_STATE_KEY).then((result) => {
+      if (!active) return;
+      if (result.ok && result.data && isEmailsState(result.data)) {
+        setState(result.data);
+      }
+      setRemoteHydrationComplete(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!remoteHydrationComplete || !canUseSupabaseRuntimeState()) return;
+    void saveRuntimeState(REMOTE_STATE_KEY, state);
+  }, [remoteHydrationComplete, state]);
+
   const refreshEmailCapability = async () => {
     if (!appConfig.features.emailEnabled) {
       setEmailCapability({
@@ -233,6 +261,27 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
   const emailAvailabilityMessage = !appConfig.features.emailEnabled
     ? 'Email feature is disabled in client configuration.'
     : emailCapability.reason;
+
+  useEffect(() => {
+    if (emailCapabilityLoading || canSendEmails) return;
+    notifications.createNotification(
+      {
+        level: 'warning',
+        source: 'system',
+        title: 'Email Delivery Unavailable',
+        message: emailAvailabilityMessage ?? 'Email sending is currently unavailable.',
+        route: '/emails/history',
+        dedupeKey: `email-capability:${emailCapability.mode}:${emailAvailabilityMessage ?? 'unknown'}`,
+      },
+      { dedupeWindowMs: 1000 * 60 * 60 * 24 * 30 },
+    );
+  }, [
+    canSendEmails,
+    emailAvailabilityMessage,
+    emailCapability.mode,
+    emailCapabilityLoading,
+    notifications,
+  ]);
 
   const contextValue: EmailsContextValue = {
     state,
@@ -266,7 +315,9 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
           ok: true,
           data: buildDefaultDraftFromQuote({
             quote,
+            client: masterData.getClientById(quote.clientId),
             latestImmutablePdfId: latestImmutable?.id,
+            businessName: businessSettings.businessName,
           }),
         };
       }
@@ -278,7 +329,9 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
         ok: true,
         data: buildDefaultDraftFromInvoice({
           invoice,
+          client: masterData.getClientById(invoice.clientId),
           latestImmutablePdfId: latestImmutable?.id,
+          businessName: businessSettings.businessName,
         }),
       };
     },
@@ -301,6 +354,11 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
     },
     sendEmailDraft: async (draft) => {
       if (!canSendEmails) {
+        notifications.pushToast({
+          level: 'warning',
+          title: 'Email Unavailable',
+          message: emailAvailabilityMessage ?? 'Email sending is currently unavailable.',
+        });
         return {
           ok: false,
           error: emailAvailabilityMessage ?? 'Email sending is currently unavailable.',
@@ -309,6 +367,11 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
 
       const validation = validateComposeDraft(draft);
       if (!validation.isValid) {
+        notifications.pushToast({
+          level: 'error',
+          title: 'Email Validation Failed',
+          message: summarizeEmailValidationIssues(validation.issues),
+        });
         return {
           ok: false,
           error: summarizeEmailValidationIssues(validation.issues),
@@ -359,6 +422,18 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
           message: resolveResult.error ?? 'Attachment resolution failed.',
         });
         replaceLog(queuedLog.id, () => failed);
+        notifications.notify({
+          level: 'error',
+          source: 'email',
+          title: 'Email Send Failed',
+          message: failed.errorMessage ?? 'Attachment resolution failed.',
+          persistent: true,
+          toast: true,
+          route: '/emails/history',
+          relatedEntityType: 'email_log',
+          relatedEntityId: failed.id,
+          dedupeKey: `email-failed:${failed.id}`,
+        });
         return { ok: false, error: failed.errorMessage };
       }
 
@@ -376,6 +451,18 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
           message: 'Attachment exceeds configured email size limit.',
         });
         replaceLog(queuedLog.id, () => failed);
+        notifications.notify({
+          level: 'error',
+          source: 'email',
+          title: 'Email Send Failed',
+          message: failed.errorMessage ?? 'Attachment exceeds configured email size limit.',
+          persistent: true,
+          toast: true,
+          route: '/emails/history',
+          relatedEntityType: 'email_log',
+          relatedEntityId: failed.id,
+          dedupeKey: `email-failed:${failed.id}`,
+        });
         return { ok: false, error: failed.errorMessage };
       }
 
@@ -393,6 +480,18 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
           message: 'Attachment data could not be encoded for transport.',
         });
         replaceLog(queuedLog.id, () => failed);
+        notifications.notify({
+          level: 'error',
+          source: 'email',
+          title: 'Email Send Failed',
+          message: failed.errorMessage ?? 'Attachment data could not be encoded for transport.',
+          persistent: true,
+          toast: true,
+          route: '/emails/history',
+          relatedEntityType: 'email_log',
+          relatedEntityId: failed.id,
+          dedupeKey: `email-failed:${failed.id}`,
+        });
         return { ok: false, error: failed.errorMessage };
       }
 
@@ -407,6 +506,18 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
           message: sendResult.error?.message ?? 'Email send failed.',
         });
         replaceLog(queuedLog.id, () => failed);
+        notifications.notify({
+          level: 'error',
+          source: 'email',
+          title: 'Email Delivery Failed',
+          message: failed.errorMessage ?? 'Email send failed.',
+          persistent: true,
+          toast: true,
+          route: '/emails/history',
+          relatedEntityType: 'email_log',
+          relatedEntityId: failed.id,
+          dedupeKey: `email-failed:${failed.id}`,
+        });
         return { ok: false, error: failed.errorMessage };
       }
 
@@ -416,6 +527,19 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
         result: sendResult,
       });
       replaceLog(queuedLog.id, () => sentLog);
+
+      notifications.notify({
+        level: 'success',
+        source: 'email',
+        title: draft.resendOfLogId ? 'Email Resent' : 'Email Sent',
+        message: `${sentLog.document.documentNumber} was sent to ${sentLog.recipient.to}.`,
+        persistent: true,
+        toast: true,
+        route: '/emails/history',
+        relatedEntityType: 'email_log',
+        relatedEntityId: sentLog.id,
+        dedupeKey: `email-sent:${sentLog.id}`,
+      });
 
       let warning: string | undefined;
       if (draft.document.documentType === 'quote') {

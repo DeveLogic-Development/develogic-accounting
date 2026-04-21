@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { clients } from '@/mocks/data';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
@@ -22,6 +21,7 @@ import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
 import { useEmails } from '@/modules/emails/hooks/useEmails';
 import { EmailComposeModal } from '@/modules/emails/components/EmailComposeModal';
 import { EmailComposeDraft } from '@/modules/emails/domain/types';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 
 export function InvoiceDetailPage() {
   const navigate = useNavigate();
@@ -49,6 +49,7 @@ export function InvoiceDetailPage() {
     emailCapabilityLoading,
     emailAvailabilityMessage,
   } = useEmails();
+  const { getClientById } = useMasterData();
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
@@ -79,7 +80,7 @@ export function InvoiceDetailPage() {
   const outstandingMinor = paymentSummary?.outstandingMinor ?? totals.totalMinor;
   const payments = getInvoicePayments(invoice.id);
 
-  const client = clients.find((entry) => entry.id === invoice.clientId);
+  const client = getClientById(invoice.clientId);
   const template = getTemplateById(invoice.templateId ?? '');
   const templateVersion = getTemplateVersionById(invoice.templateVersionId);
   const editable = canEditInvoice(invoice.status).allowed;
@@ -90,6 +91,11 @@ export function InvoiceDetailPage() {
   const latestDraftPdf = pdfRecords.find((record) => !record.immutable);
   const emailLogs = getLogsForDocument({ documentType: 'invoice', documentId: invoice.id });
   const recentEmailLogs = emailLogs.slice(0, 3);
+  const sendDisabledReason = emailCapabilityLoading
+    ? 'Checking email capability...'
+    : !canSendEmails
+      ? (emailAvailabilityMessage ?? 'Email sending is currently unavailable.')
+      : undefined;
 
   const canRecordPayment = invoice.status !== 'void' && invoice.status !== 'draft' && outstandingMinor > 0;
 
@@ -111,8 +117,7 @@ export function InvoiceDetailPage() {
   );
 
   const handleTransition = (target: 'approved' | 'sent' | 'void') => {
-    const note = target === 'void' ? window.prompt('Optional void note') ?? undefined : undefined;
-    const result = transitionInvoice(invoice.id, target, note);
+    const result = transitionInvoice(invoice.id, target);
     setNotice({
       tone: result.ok ? 'success' : 'error',
       text: result.ok ? `Invoice marked as ${target}.` : result.error ?? 'Action failed.',
@@ -256,6 +261,7 @@ export function InvoiceDetailPage() {
               variant="primary"
               onClick={handleOpenSendDialog}
               disabled={!canSendEmails || emailCapabilityLoading}
+              title={sendDisabledReason}
             >
               {emailCapabilityLoading ? 'Checking Email...' : 'Send Invoice Email'}
             </Button>
@@ -414,7 +420,12 @@ export function InvoiceDetailPage() {
                 </div>
               ))}
               <div className="dl-inline-actions">
-                <Button size="sm" onClick={handleOpenSendDialog} disabled={!canSendEmails || emailCapabilityLoading}>
+                <Button
+                  size="sm"
+                  onClick={handleOpenSendDialog}
+                  disabled={!canSendEmails || emailCapabilityLoading}
+                  title={sendDisabledReason}
+                >
                   Compose and Send
                 </Button>
                 <Link to="/emails/history">

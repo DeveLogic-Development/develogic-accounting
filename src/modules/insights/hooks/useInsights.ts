@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { clients } from '@/mocks/data';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { useEmails } from '@/modules/emails/hooks/useEmails';
 import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 import { resolveDateRangePreset } from '../domain/date-range';
 import { computeDashboardInsights, computeReportsSummary } from '../domain/reports';
 import { DateRange, DateRangePreset, ReportsSummary } from '../domain/types';
@@ -15,14 +15,15 @@ interface UseReportsOptions {
   };
 }
 
-function createClientNameById(): Map<string, string> {
-  return new Map(clients.map((client) => [client.id, client.name]));
+function createClientNameById(clientRows: Array<{ id: string; name: string }>): Map<string, string> {
+  return new Map(clientRows.map((client) => [client.id, client.name]));
 }
 
 export function useDashboardInsights() {
   const { quoteSummaries, invoiceSummaries, state } = useAccounting();
   const { rows: emailRows } = useEmails();
   const { rows: pdfRows } = usePdfArchive();
+  const { clients } = useMasterData();
 
   return useMemo(
     () =>
@@ -33,9 +34,9 @@ export function useDashboardInsights() {
         payments: state.payments,
         emailRows,
         pdfRows,
-        clientNameById: createClientNameById(),
+        clientNameById: createClientNameById(clients),
       }),
-    [emailRows, invoiceSummaries, pdfRows, quoteSummaries, state.payments, state.quotes],
+    [clients, emailRows, invoiceSummaries, pdfRows, quoteSummaries, state.payments, state.quotes],
   );
 }
 
@@ -46,6 +47,7 @@ export function useReportsSummary(options: UseReportsOptions = {}): {
   const { quoteSummaries, invoiceSummaries, state } = useAccounting();
   const { rows: emailRows } = useEmails();
   const { rows: pdfRows } = usePdfArchive();
+  const { clients } = useMasterData();
 
   const preset = options.preset ?? 'current_month';
   const range = useMemo<DateRange>(() => {
@@ -67,9 +69,9 @@ export function useReportsSummary(options: UseReportsOptions = {}): {
         emailRows,
         pdfRows,
         range,
-        clientNameById: createClientNameById(),
+        clientNameById: createClientNameById(clients),
       }),
-    [emailRows, invoiceSummaries, pdfRows, quoteSummaries, range, state.payments, state.quotes],
+    [clients, emailRows, invoiceSummaries, pdfRows, quoteSummaries, range, state.payments, state.quotes],
   );
 
   return {

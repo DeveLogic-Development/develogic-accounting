@@ -31,7 +31,7 @@ function TrendBars(props: { rows: Array<{ label: string; invoicedMinor: number; 
                 title={`Invoiced ${formatMinorCurrency(row.invoicedMinor)}`}
                 style={{
                   borderRadius: 6,
-                  background: 'linear-gradient(180deg, #4f8abc 0%, #174b7a 100%)',
+                  background: '#1f5f96',
                   height: `${Math.max(10, Math.round((row.invoicedMinor / max) * 140))}px`,
                 }}
               />
@@ -39,7 +39,7 @@ function TrendBars(props: { rows: Array<{ label: string; invoicedMinor: number; 
                 title={`Paid ${formatMinorCurrency(row.paidMinor)}`}
                 style={{
                   borderRadius: 6,
-                  background: 'linear-gradient(180deg, #2fa37d 0%, #0f6b4f 100%)',
+                  background: '#1f8b69',
                   height: `${Math.max(10, Math.round((row.paidMinor / max) * 90))}px`,
                 }}
               />

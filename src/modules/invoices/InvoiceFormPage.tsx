@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { clients } from '@/mocks/data';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
@@ -24,6 +23,7 @@ import { FormValidationSummary } from '@/modules/accounting/components/FormValid
 import { LineItemsEditor } from '@/modules/accounting/components/LineItemsEditor';
 import { DocumentTotalsPanel } from '@/modules/accounting/components/DocumentTotalsPanel';
 import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 
 function getIssueForField(issues: ValidationIssue[], field: string): string | undefined {
   return issues.find((issue) => issue.field === field)?.message;
@@ -41,6 +41,7 @@ export function InvoiceFormPage() {
     duplicateInvoice,
     transitionInvoice,
   } = useAccounting();
+  const { clients, getClientById } = useMasterData();
   const { getTemplateAssignmentsForDocument, getDefaultTemplateAssignmentForDocument } = useTemplates();
   const { generateInvoicePdf } = usePdfArchive();
 
@@ -117,6 +118,17 @@ export function InvoiceFormPage() {
 
     return [{ label: 'Select template', value: '' }, ...options];
   }, [templateAssignments, values.templateName, values.templateVersionId]);
+  const clientOptions = useMemo(() => {
+    const options = clients.map((client) => ({ label: client.name, value: client.id }));
+    const currentClient = getClientById(values.clientId);
+    if (values.clientId && !clients.some((client) => client.id === values.clientId)) {
+      options.unshift({
+        label: `Current: ${currentClient?.name ?? values.clientId}`,
+        value: values.clientId,
+      });
+    }
+    return [{ label: 'Select client', value: '' }, ...options];
+  }, [clients, getClientById, values.clientId]);
 
   const getFieldError = (field: string) => getIssueForField(issues, field);
 
@@ -260,10 +272,7 @@ export function InvoiceFormPage() {
                 label="Client"
                 value={values.clientId}
                 onChange={(event) => applyValues('clientId', event.target.value)}
-                options={[
-                  { label: 'Select client', value: '' },
-                  ...clients.map((client) => ({ label: client.name, value: client.id })),
-                ]}
+                options={clientOptions}
                 disabled={!editable}
                 helperText={getFieldError('clientId')}
               />

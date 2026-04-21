@@ -1,14 +1,17 @@
 import { Link, useParams } from 'react-router-dom';
-import { productsServices, quotes, invoices } from '@/mocks/data';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
 import { Card } from '@/design-system/primitives/Card';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { formatCurrency } from '@/utils/format';
+import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
+import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 
 export function ProductServiceDetailPage() {
   const { productId } = useParams();
-  const item = productsServices.find((entry) => entry.id === productId);
+  const { getProductById, getClientNameById } = useMasterData();
+  const { state } = useAccounting();
+  const item = getProductById(productId);
 
   if (!item) {
     return (
@@ -24,8 +27,17 @@ export function ProductServiceDetailPage() {
     );
   }
 
-  const linkedQuotes = quotes.slice(0, 2);
-  const linkedInvoices = invoices.slice(0, 2);
+  const linkedQuotes = state.quotes
+    .filter((quote) =>
+      quote.items.some((line) => line.itemName.trim().toLowerCase() === item.name.trim().toLowerCase()),
+    )
+    .slice(0, 2);
+  const linkedInvoices = state.invoices
+    .filter((invoice) =>
+      invoice.items.some((line) => line.itemName.trim().toLowerCase() === item.name.trim().toLowerCase()),
+    )
+    .slice(0, 2);
+  const usageCount = linkedQuotes.length + linkedInvoices.length;
 
   return (
     <>
@@ -34,8 +46,12 @@ export function ProductServiceDetailPage() {
         subtitle={`${item.type === 'service' ? 'Service' : 'Product'} · ${item.sku}`}
         actions={
           <>
-            <Button variant="secondary">Duplicate</Button>
-            <Button variant="primary">Edit Item</Button>
+            <Link to={`/products-services/new?duplicateFrom=${item.id}`}>
+              <Button variant="secondary">Duplicate</Button>
+            </Link>
+            <Link to={`/products-services/${item.id}/edit`}>
+              <Button variant="primary">Edit Item</Button>
+            </Link>
           </>
         }
       />
@@ -50,7 +66,7 @@ export function ProductServiceDetailPage() {
           </p>
         </Card>
         <Card title="Usage Count">
-          <p className="dl-stat-value">{item.usageCount}</p>
+          <p className="dl-stat-value">{usageCount}</p>
         </Card>
       </div>
 
@@ -63,12 +79,12 @@ export function ProductServiceDetailPage() {
           <div style={{ display: 'grid', gap: 8 }}>
             {linkedQuotes.map((quote) => (
               <div key={quote.id}>
-                Quote {quote.quoteNumber} · {quote.clientName}
+                Quote {quote.quoteNumber} · {getClientNameById(quote.clientId)}
               </div>
             ))}
             {linkedInvoices.map((invoice) => (
               <div key={invoice.id}>
-                Invoice {invoice.invoiceNumber} · {invoice.clientName}
+                Invoice {invoice.invoiceNumber} · {getClientNameById(invoice.clientId)}
               </div>
             ))}
           </div>

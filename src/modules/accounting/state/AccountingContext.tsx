@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { createSeedState } from '../data/seed';
 import { LocalStorageAccountingRepository } from '../data/localStorageRepository';
 import {
@@ -20,6 +20,8 @@ import { convertQuoteToInvoice } from '../domain/conversion';
 import { toMinor } from '../domain/money';
 import { deriveInvoicePaymentSummary } from '../domain/calculations';
 import { selectInvoiceById, selectInvoiceSummaries, selectQuoteById, selectQuoteSummaries } from '../domain/selectors';
+import { useNotificationsContext } from '@/modules/notifications/state/NotificationsContext';
+import { canUseSupabaseRuntimeState, loadRuntimeState, saveRuntimeState } from '@/lib/supabase/runtime-state';
 
 interface ActionResult<T = undefined> {
   ok: boolean;
@@ -49,6 +51,7 @@ interface AccountingContextValue {
 
 const repository = new LocalStorageAccountingRepository();
 const AccountingContext = createContext<AccountingContextValue | undefined>(undefined);
+const REMOTE_STATE_KEY = 'accounting';
 
 function isAccountingState(value: unknown): value is AccountingState {
   if (!value || typeof value !== 'object') return false;
@@ -92,6 +95,8 @@ function summarizeValidationErrors(issues: Array<{ message: string }>): string {
 
 export function AccountingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AccountingState>(createInitialState);
+  const notifications = useNotificationsContext();
+  const [remoteHydrationComplete, setRemoteHydrationComplete] = useState(!canUseSupabaseRuntimeState());
 
   const commit = (updater: (previous: AccountingState) => AccountingState) => {
     setState((previous) => {
@@ -103,6 +108,28 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
 
   const quoteSummaries = useMemo(() => selectQuoteSummaries(state), [state]);
   const invoiceSummaries = useMemo(() => selectInvoiceSummaries(state), [state]);
+
+  useEffect(() => {
+    if (!canUseSupabaseRuntimeState()) return;
+
+    let active = true;
+    loadRuntimeState<AccountingState>(REMOTE_STATE_KEY).then((result) => {
+      if (!active) return;
+      if (result.ok && result.data && isAccountingState(result.data)) {
+        setState(result.data);
+      }
+      setRemoteHydrationComplete(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!remoteHydrationComplete || !canUseSupabaseRuntimeState()) return;
+    void saveRuntimeState(REMOTE_STATE_KEY, state);
+  }, [remoteHydrationComplete, state]);
 
   const contextValue: AccountingContextValue = {
     state,
@@ -176,7 +203,18 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       });
 
       return createdQuote
-        ? { ok: true, data: createdQuote }
+        ? (() => {
+            notifications.notify({
+              level: 'success',
+              source: 'quotes',
+              title: 'Quote Draft Created',
+              message: `${createdQuote.quoteNumber} has been created.`,
+              persistent: false,
+              toast: true,
+              route: `/quotes/${createdQuote.id}`,
+            });
+            return { ok: true, data: createdQuote };
+          })()
         : { ok: false, error: 'Unable to create quote.' };
     },
     updateQuote: (quoteId, values) => {
@@ -212,6 +250,16 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         ...previous,
         quotes: previous.quotes.map((entry) => (entry.id === quoteId ? nextQuote : entry)),
       }));
+
+      notifications.notify({
+        level: 'success',
+        source: 'quotes',
+        title: 'Quote Draft Saved',
+        message: `${nextQuote.quoteNumber} was updated.`,
+        persistent: false,
+        toast: true,
+        route: `/quotes/${nextQuote.id}`,
+      });
 
       return { ok: true, data: nextQuote };
     },
@@ -265,7 +313,18 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       });
 
       return duplicateQuote
-        ? { ok: true, data: duplicateQuote }
+        ? (() => {
+            notifications.notify({
+              level: 'info',
+              source: 'quotes',
+              title: 'Quote Duplicated',
+              message: `${source.quoteNumber} was copied to ${duplicateQuote.quoteNumber}.`,
+              persistent: false,
+              toast: true,
+              route: `/quotes/${duplicateQuote.id}/edit`,
+            });
+            return { ok: true, data: duplicateQuote };
+          })()
         : { ok: false, error: 'Unable to duplicate quote.' };
     },
     transitionQuote: (quoteId, target, note) => {
@@ -296,6 +355,24 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         ...previous,
         quotes: previous.quotes.map((entry) => (entry.id === quoteId ? nextQuote : entry)),
       }));
+
+      notifications.notify({
+        level:
+          target === 'accepted'
+            ? 'success'
+            : target === 'rejected' || target === 'expired'
+              ? 'warning'
+              : 'info',
+        source: 'quotes',
+        title: `Quote ${target.charAt(0).toUpperCase() + target.slice(1)}`,
+        message: `${quote.quoteNumber} is now ${target.replace('_', ' ')}.`,
+        persistent: target === 'accepted' || target === 'rejected' || target === 'expired',
+        toast: true,
+        route: `/quotes/${quote.id}`,
+        relatedEntityType: 'quote',
+        relatedEntityId: quote.id,
+        dedupeKey: `quote:${quote.id}:status:${target}`,
+      });
 
       return { ok: true, data: nextQuote };
     },
@@ -342,7 +419,22 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       });
 
       return createdInvoice
-        ? { ok: true, data: createdInvoice }
+        ? (() => {
+            notifications.notify({
+              level: 'success',
+              source: 'quotes',
+              title: 'Quote Converted',
+              message: `${quote.quoteNumber} was converted to ${createdInvoice.invoiceNumber}.`,
+              persistent: true,
+              toast: true,
+              route: `/invoices/${createdInvoice.id}`,
+              relatedEntityType: 'invoice',
+              relatedEntityId: createdInvoice.id,
+              dedupeKey: `quote:${quote.id}:converted:${createdInvoice.id}`,
+              dedupeWindowMs: 90_000,
+            });
+            return { ok: true, data: createdInvoice };
+          })()
         : { ok: false, error: 'Unable to convert quote.' };
     },
     createInvoice: (values) => {
@@ -393,7 +485,18 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       });
 
       return createdInvoice
-        ? { ok: true, data: createdInvoice }
+        ? (() => {
+            notifications.notify({
+              level: 'success',
+              source: 'invoices',
+              title: 'Invoice Draft Created',
+              message: `${createdInvoice.invoiceNumber} has been created.`,
+              persistent: false,
+              toast: true,
+              route: `/invoices/${createdInvoice.id}`,
+            });
+            return { ok: true, data: createdInvoice };
+          })()
         : { ok: false, error: 'Unable to create invoice.' };
     },
     updateInvoice: (invoiceId, values) => {
@@ -430,6 +533,16 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         ...previous,
         invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
       }));
+
+      notifications.notify({
+        level: 'success',
+        source: 'invoices',
+        title: 'Invoice Draft Saved',
+        message: `${nextInvoice.invoiceNumber} was updated.`,
+        persistent: false,
+        toast: true,
+        route: `/invoices/${nextInvoice.id}`,
+      });
 
       return { ok: true, data: nextInvoice };
     },
@@ -481,7 +594,18 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       });
 
       return duplicateInvoice
-        ? { ok: true, data: duplicateInvoice }
+        ? (() => {
+            notifications.notify({
+              level: 'info',
+              source: 'invoices',
+              title: 'Invoice Duplicated',
+              message: `${source.invoiceNumber} was copied to ${duplicateInvoice.invoiceNumber}.`,
+              persistent: false,
+              toast: true,
+              route: `/invoices/${duplicateInvoice.id}/edit`,
+            });
+            return { ok: true, data: duplicateInvoice };
+          })()
         : { ok: false, error: 'Unable to duplicate invoice.' };
     },
     transitionInvoice: (invoiceId, target, note) => {
@@ -509,6 +633,19 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         ...previous,
         invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
       }));
+
+      notifications.notify({
+        level: target === 'void' ? 'warning' : 'info',
+        source: 'invoices',
+        title: target === 'void' ? 'Invoice Voided' : `Invoice ${target === 'approved' ? 'Opened' : 'Sent'}`,
+        message: `${invoice.invoiceNumber} is now ${target === 'approved' ? 'open' : target}.`,
+        persistent: target === 'void' || target === 'sent',
+        toast: true,
+        route: `/invoices/${invoice.id}`,
+        relatedEntityType: 'invoice',
+        relatedEntityId: invoice.id,
+        dedupeKey: `invoice:${invoice.id}:status:${target}`,
+      });
 
       return { ok: true, data: nextInvoice };
     },
@@ -560,6 +697,34 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         payments: [payment, ...previous.payments],
         invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
       }));
+
+      notifications.notify({
+        level: 'success',
+        source: 'payments',
+        title: 'Payment Recorded',
+        message: `${input.amount.toFixed(2)} was applied to ${invoice.invoiceNumber}.`,
+        persistent: true,
+        toast: true,
+        route: `/invoices/${invoice.id}`,
+        relatedEntityType: 'invoice',
+        relatedEntityId: invoice.id,
+        dedupeKey: `payment:${payment.id}`,
+      });
+
+      if (nextSummary.derivedStatus === 'paid') {
+        notifications.notify({
+          level: 'success',
+          source: 'invoices',
+          title: 'Invoice Paid',
+          message: `${invoice.invoiceNumber} is fully settled.`,
+          persistent: true,
+          toast: true,
+          route: `/invoices/${invoice.id}`,
+          relatedEntityType: 'invoice',
+          relatedEntityId: invoice.id,
+          dedupeKey: `invoice:${invoice.id}:paid`,
+        });
+      }
 
       return { ok: true };
     },

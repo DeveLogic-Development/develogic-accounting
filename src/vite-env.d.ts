@@ -8,8 +8,14 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_SUPABASE_STORAGE_BUCKET?: string;
+  readonly VITE_SUPABASE_EMAIL?: string;
+  readonly VITE_SUPABASE_PASSWORD?: string;
+  readonly VITE_SUPABASE_AUTO_SIGNUP?: string;
+  readonly VITE_EMAIL_TRANSPORT_MODE?: string;
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare const __ENV_EXAMPLE__: Record<string, string> | undefined;
