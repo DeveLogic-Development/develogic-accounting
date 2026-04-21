@@ -9,6 +9,7 @@ interface DocumentTotalsPanelProps {
   documentDiscountPercent: number;
   currencyCode?: string;
   paidMinor?: number;
+  adjustment?: number;
 }
 
 export function DocumentTotalsPanel({
@@ -16,6 +17,7 @@ export function DocumentTotalsPanel({
   documentDiscountPercent,
   currencyCode = 'ZAR',
   paidMinor,
+  adjustment = 0,
 }: DocumentTotalsPanelProps) {
   const totals = calculateDocumentTotals(
     items.map((item, index) => ({
@@ -29,6 +31,7 @@ export function DocumentTotalsPanel({
       position: index + 1,
     })),
     documentDiscountPercent,
+    toMinor(adjustment),
   );
 
   const outstandingMinor = typeof paidMinor === 'number' ? Math.max(0, totals.totalMinor - paidMinor) : undefined;
@@ -45,6 +48,11 @@ export function DocumentTotalsPanel({
           label="Document Discount"
           value={`- ${formatMinorCurrency(totals.documentDiscountMinor, currencyCode)}`}
           muted={documentDiscountPercent <= 0}
+        />
+        <Row
+          label="Adjustment"
+          value={formatMinorCurrency(totals.adjustmentMinor, currencyCode)}
+          muted={totals.adjustmentMinor === 0}
         />
         <Row label="Tax" value={formatMinorCurrency(totals.taxMinor, currencyCode)} />
         <div className="dl-divider" style={{ margin: '6px 0' }} />

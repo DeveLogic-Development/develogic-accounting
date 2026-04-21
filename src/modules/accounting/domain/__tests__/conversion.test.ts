@@ -55,4 +55,60 @@ describe('convertQuoteToInvoice', () => {
     expect(invoice.items[0].id).not.toBe('q_line_1');
     expect(invoice.statusHistory[0].note).toContain('QUO-00001');
   });
+
+  it('respects conversion preferences for notes and terms carry-over', () => {
+    const quote: Quote = {
+      id: 'q_002',
+      quoteNumber: 'QUO-00002',
+      clientId: 'cl_001',
+      issueDate: '2026-04-01',
+      expiryDate: '2026-04-20',
+      currencyCode: 'ZAR',
+      status: 'accepted',
+      templateName: 'Modern Quote',
+      notes: 'Customer-facing note',
+      termsAndConditions: 'Net 7 terms',
+      paymentTerms: '14 days',
+      internalMemo: 'Internal only',
+      items: [
+        {
+          id: 'q_line_1',
+          itemName: 'Consulting',
+          description: 'Monthly consulting',
+          quantity: 1,
+          unitPriceMinor: 12000,
+          discountPercent: 0,
+          taxRatePercent: 15,
+          position: 1,
+        },
+      ],
+      documentDiscountPercent: 0,
+      createdAt: '2026-04-01T00:00:00.000Z',
+      updatedAt: '2026-04-01T00:00:00.000Z',
+      statusHistory: [
+        {
+          id: 'qs_1',
+          status: 'accepted',
+          at: '2026-04-03T00:00:00.000Z',
+        },
+      ],
+    };
+
+    const invoice = convertQuoteToInvoice({
+      quote,
+      invoiceId: 'inv_002',
+      invoiceNumber: 'INV-00002',
+      nowIso: '2026-04-04T00:00:00.000Z',
+      dueDate: '2026-04-18',
+      options: {
+        carryCustomerNotes: false,
+        carryTermsAndConditions: false,
+        carryAddresses: false,
+      },
+    });
+
+    expect(invoice.notes).toBe('');
+    expect(invoice.paymentTerms).toBe('');
+    expect(invoice.statusHistory[0].note).toContain('address snapshots excluded');
+  });
 });

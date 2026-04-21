@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { Button } from '@/design-system/primitives/Button';
@@ -53,6 +53,7 @@ export function InvoiceFormPage() {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const hydratedVersionRef = useRef<string | null>(null);
 
   const templateAssignments = useMemo(
     () => getTemplateAssignmentsForDocument('invoice'),
@@ -64,10 +65,14 @@ export function InvoiceFormPage() {
   );
 
   useEffect(() => {
-    if (existingInvoice) {
-      setValues(mapInvoiceToFormValues(existingInvoice));
-    }
-  }, [existingInvoice]);
+    if (!existingInvoice) return;
+
+    // Avoid wiping in-progress edits on every render.
+    const hydrateVersion = `${existingInvoice.id}:${existingInvoice.updatedAt}`;
+    if (hydratedVersionRef.current === hydrateVersion) return;
+    hydratedVersionRef.current = hydrateVersion;
+    setValues(mapInvoiceToFormValues(existingInvoice));
+  }, [existingInvoice?.id, existingInvoice?.updatedAt]);
 
   useEffect(() => {
     if (existingInvoice) return;

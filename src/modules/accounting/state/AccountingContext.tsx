@@ -8,6 +8,10 @@ import {
   Payment,
   PaymentInput,
   Quote,
+  QuoteActivityEvent,
+  QuoteAttachment,
+  QuoteComment,
+  QuoteConversionPreferences,
   QuoteFormValues,
 } from '../domain/types';
 import { validateInvoiceForm, validatePaymentInput, validateQuoteForm } from '../domain/validation';
@@ -41,7 +45,27 @@ interface AccountingContextValue {
   updateQuote: (quoteId: string, values: QuoteFormValues) => ActionResult<Quote>;
   duplicateQuote: (quoteId: string) => ActionResult<Quote>;
   transitionQuote: (quoteId: string, target: Quote['status'], note?: string) => ActionResult<Quote>;
-  convertQuoteToInvoice: (quoteId: string) => ActionResult<Invoice>;
+  convertQuoteToInvoice: (
+    quoteId: string,
+    options?: Partial<QuoteConversionPreferences>,
+  ) => ActionResult<Invoice>;
+  deleteQuote: (quoteId: string) => ActionResult;
+  addQuoteComment: (quoteId: string, body: string) => ActionResult<QuoteComment>;
+  addQuoteAttachment: (
+    quoteId: string,
+    input: {
+      fileName: string;
+      mimeType: string;
+      sizeBytes: number;
+      dataUrl?: string;
+      storageKey?: string;
+    },
+  ) => ActionResult<QuoteAttachment>;
+  removeQuoteAttachment: (quoteId: string, attachmentId: string) => ActionResult;
+  updateQuoteConversionPreferences: (
+    quoteId: string,
+    options: Partial<QuoteConversionPreferences>,
+  ) => ActionResult<Quote>;
   createInvoice: (values: InvoiceFormValues) => ActionResult<Invoice>;
   updateInvoice: (invoiceId: string, values: InvoiceFormValues) => ActionResult<Invoice>;
   duplicateInvoice: (invoiceId: string) => ActionResult<Invoice>;
@@ -71,6 +95,46 @@ function createInitialState(): AccountingState {
   return isAccountingState(loaded) ? loaded : createSeedState();
 }
 
+const DEFAULT_QUOTE_CONVERSION_PREFERENCES: QuoteConversionPreferences = {
+  carryCustomerNotes: true,
+  carryTermsAndConditions: true,
+  carryAddresses: true,
+};
+
+function normalizeRecipientEmails(values?: string[]): string[] {
+  if (!values) return [];
+  const unique = new Set<string>();
+  values.forEach((email) => {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) return;
+    unique.add(trimmed);
+  });
+  return Array.from(unique);
+}
+
+function normalizeQuoteForConsumers(quote: Quote): Quote {
+  return {
+    ...quote,
+    referenceNumber: quote.referenceNumber ?? '',
+    salesperson: quote.salesperson ?? '',
+    projectName: quote.projectName ?? '',
+    subject: quote.subject ?? '',
+    notes: quote.notes ?? '',
+    termsAndConditions: quote.termsAndConditions ?? quote.paymentTerms ?? '',
+    paymentTerms: quote.paymentTerms ?? '',
+    internalMemo: quote.internalMemo ?? '',
+    adjustmentMinor: quote.adjustmentMinor ?? 0,
+    recipientEmails: quote.recipientEmails ?? [],
+    comments: quote.comments ?? [],
+    attachments: quote.attachments ?? [],
+    activityLog: quote.activityLog ?? [],
+    conversionPreferences: {
+      ...DEFAULT_QUOTE_CONVERSION_PREFERENCES,
+      ...(quote.conversionPreferences ?? {}),
+    },
+  };
+}
+
 function appendStatusEvent<
   TStatus extends string,
   TEntity extends { statusHistory: Array<{ id: string; status: TStatus; at: string; note?: string }> },
@@ -91,6 +155,21 @@ function appendStatusEvent<
 
 function summarizeValidationErrors(issues: Array<{ message: string }>): string {
   return issues.map((issue) => issue.message).join(' ');
+}
+
+function createQuoteActivityEvent(input: {
+  event: QuoteActivityEvent['event'];
+  at: string;
+  message: string;
+  actor?: string;
+}): QuoteActivityEvent {
+  return {
+    id: createId('qevt'),
+    event: input.event,
+    at: input.at,
+    actor: input.actor,
+    message: input.message,
+  };
 }
 
 export function AccountingProvider({ children }: { children: ReactNode }) {
@@ -135,7 +214,10 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
     state,
     quoteSummaries,
     invoiceSummaries,
-    getQuoteById: (quoteId) => selectQuoteById(state, quoteId),
+    getQuoteById: (quoteId) => {
+      const quote = selectQuoteById(state, quoteId);
+      return quote ? normalizeQuoteForConsumers(quote) : undefined;
+    },
     getInvoiceById: (invoiceId) => {
       const invoice = selectInvoiceById(state, invoiceId);
       if (!invoice) return undefined;
@@ -166,11 +248,20 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
 
       commit((previous) => {
         const quoteId = createId('quote');
-        const quoteNumber = `QUO-${String(previous.quoteSequenceNext).padStart(5, '0')}`;
+        const generatedQuoteNumber = `QUO-${String(previous.quoteSequenceNext).padStart(5, '0')}`;
+        const requestedQuoteNumber = values.quoteNumber?.trim();
+        const quoteNumber =
+          requestedQuoteNumber && !previous.quotes.some((entry) => entry.quoteNumber === requestedQuoteNumber)
+            ? requestedQuoteNumber
+            : generatedQuoteNumber;
 
-        createdQuote = {
+        createdQuote = normalizeQuoteForConsumers({
           id: quoteId,
           quoteNumber,
+          referenceNumber: values.referenceNumber?.trim() || undefined,
+          salesperson: values.salesperson?.trim() || undefined,
+          projectName: values.projectName?.trim() || undefined,
+          subject: values.subject?.trim() || undefined,
           clientId: values.clientId,
           issueDate: values.issueDate,
           expiryDate: values.expiryDate,
@@ -180,8 +271,23 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
           templateVersionId: values.templateVersionId,
           templateName: values.templateName,
           notes: values.notes,
+          termsAndConditions: values.termsAndConditions ?? values.paymentTerms,
           paymentTerms: values.paymentTerms,
           internalMemo: values.internalMemo,
+          adjustmentMinor: toMinor(values.adjustment ?? 0),
+          recipientEmails: normalizeRecipientEmails(values.recipientEmails),
+          billingAddressSnapshot: values.billingAddressSnapshot,
+          shippingAddressSnapshot: values.shippingAddressSnapshot,
+          comments: [],
+          attachments: values.attachments ?? [],
+          activityLog: [
+            createQuoteActivityEvent({
+              event: 'created',
+              at: nowIso,
+              message: `Quote ${quoteNumber} created.`,
+            }),
+          ],
+          conversionPreferences: { ...DEFAULT_QUOTE_CONVERSION_PREFERENCES },
           items: mapQuoteItemsFormToDomain(values.items),
           documentDiscountPercent: values.documentDiscountPercent,
           createdAt: nowIso,
@@ -193,7 +299,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
               at: nowIso,
             },
           ],
-        };
+        });
 
         return {
           ...previous,
@@ -230,8 +336,12 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       }
 
       const nowIso = new Date().toISOString();
-      const nextQuote: Quote = {
+      const nextQuote = normalizeQuoteForConsumers({
         ...quote,
+        referenceNumber: values.referenceNumber?.trim() || undefined,
+        salesperson: values.salesperson?.trim() || undefined,
+        projectName: values.projectName?.trim() || undefined,
+        subject: values.subject?.trim() || undefined,
         clientId: values.clientId,
         issueDate: values.issueDate,
         expiryDate: values.expiryDate,
@@ -239,12 +349,26 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         templateVersionId: values.templateVersionId,
         templateName: values.templateName,
         notes: values.notes,
+        termsAndConditions: values.termsAndConditions ?? values.paymentTerms,
         paymentTerms: values.paymentTerms,
         internalMemo: values.internalMemo,
+        adjustmentMinor: toMinor(values.adjustment ?? 0),
+        recipientEmails: normalizeRecipientEmails(values.recipientEmails),
+        billingAddressSnapshot: values.billingAddressSnapshot,
+        shippingAddressSnapshot: values.shippingAddressSnapshot,
+        attachments: values.attachments ?? quote.attachments ?? [],
         documentDiscountPercent: values.documentDiscountPercent,
         items: mapQuoteItemsFormToDomain(values.items),
         updatedAt: nowIso,
-      };
+        activityLog: [
+          ...(quote.activityLog ?? []),
+          createQuoteActivityEvent({
+            event: 'updated',
+            at: nowIso,
+            message: `Quote ${quote.quoteNumber} updated.`,
+          }),
+        ],
+      });
 
       commit((previous) => ({
         ...previous,
@@ -275,7 +399,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         const nextId = createId('quote');
         const nextNumber = `QUO-${String(previous.quoteSequenceNext).padStart(5, '0')}`;
 
-        duplicateQuote = {
+        duplicateQuote = normalizeQuoteForConsumers({
           ...source,
           id: nextId,
           quoteNumber: nextNumber,
@@ -290,6 +414,15 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
           rejectedAt: undefined,
           rejectionReason: undefined,
           convertedInvoiceId: undefined,
+          comments: [],
+          attachments: [],
+          activityLog: [
+            createQuoteActivityEvent({
+              event: 'duplicated',
+              at: nowIso,
+              message: `Duplicated from ${source.quoteNumber} into ${nextNumber}.`,
+            }),
+          ],
           statusHistory: [
             {
               id: createId('status'),
@@ -303,7 +436,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
             id: `${nextId}_item_${index + 1}`,
             position: index + 1,
           })),
-        };
+        });
 
         return {
           ...previous,
@@ -350,6 +483,17 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       }
 
       nextQuote = appendStatusEvent(nextQuote, target, nowIso, note);
+      nextQuote = {
+        ...nextQuote,
+        activityLog: [
+          ...(nextQuote.activityLog ?? []),
+          createQuoteActivityEvent({
+            event: 'status_changed',
+            at: nowIso,
+            message: `Status changed to ${target.replace('_', ' ')}.`,
+          }),
+        ],
+      };
 
       commit((previous) => ({
         ...previous,
@@ -376,7 +520,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
 
       return { ok: true, data: nextQuote };
     },
-    convertQuoteToInvoice: (quoteId) => {
+    convertQuoteToInvoice: (quoteId, options) => {
       const quote = selectQuoteById(state, quoteId);
       if (!quote) return { ok: false, error: 'Quote not found.' };
 
@@ -389,6 +533,11 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       commit((previous) => {
         const invoiceId = createId('invoice');
         const invoiceNumber = `INV-${String(previous.invoiceSequenceNext).padStart(5, '0')}`;
+        const preferences = {
+          ...DEFAULT_QUOTE_CONVERSION_PREFERENCES,
+          ...(quote.conversionPreferences ?? {}),
+          ...(options ?? {}),
+        };
 
         createdInvoice = convertQuoteToInvoice({
           quote,
@@ -396,19 +545,33 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
           invoiceNumber,
           nowIso,
           dueDate: addDaysIsoDate(todayIsoDate(), 14),
+          options: preferences,
         });
 
-        const convertedQuote = appendStatusEvent(
-          {
-            ...quote,
-            status: 'converted',
-            convertedInvoiceId: invoiceId,
-            updatedAt: nowIso,
-          },
-          'converted',
-          nowIso,
-          `Converted to ${invoiceNumber}`,
-        );
+        const convertedQuote: Quote = {
+          ...quote,
+          status: 'converted',
+          convertedInvoiceId: invoiceId,
+          conversionPreferences: preferences,
+          updatedAt: nowIso,
+          activityLog: [
+            ...(quote.activityLog ?? []),
+            createQuoteActivityEvent({
+              event: 'converted',
+              at: nowIso,
+              message: `Converted to invoice ${invoiceNumber}.`,
+              }),
+            ],
+          statusHistory: [
+            ...quote.statusHistory,
+            {
+              id: createId('status'),
+              status: 'converted',
+              at: nowIso,
+              note: `Converted to ${invoiceNumber}`,
+            },
+          ],
+        };
 
         return {
           ...previous,
@@ -436,6 +599,160 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
             return { ok: true, data: createdInvoice };
           })()
         : { ok: false, error: 'Unable to convert quote.' };
+    },
+    deleteQuote: (quoteId) => {
+      const quote = selectQuoteById(state, quoteId);
+      if (!quote) return { ok: false, error: 'Quote not found.' };
+      if (quote.status === 'converted') {
+        return { ok: false, error: 'Converted quotes cannot be deleted.' };
+      }
+
+      commit((previous) => ({
+        ...previous,
+        quotes: previous.quotes.filter((entry) => entry.id !== quoteId),
+      }));
+
+      notifications.notify({
+        level: 'warning',
+        source: 'quotes',
+        title: 'Quote Deleted',
+        message: `${quote.quoteNumber} has been deleted.`,
+        persistent: true,
+        toast: true,
+        route: '/quotes',
+        dedupeKey: `quote:${quoteId}:deleted`,
+      });
+
+      return { ok: true };
+    },
+    addQuoteComment: (quoteId, body) => {
+      const quote = selectQuoteById(state, quoteId);
+      if (!quote) return { ok: false, error: 'Quote not found.' };
+      const trimmedBody = body.trim();
+      if (!trimmedBody) return { ok: false, error: 'Comment cannot be empty.' };
+
+      const nowIso = new Date().toISOString();
+      const comment: QuoteComment = {
+        id: createId('qcom'),
+        body: trimmedBody,
+        createdAt: nowIso,
+      };
+
+      commit((previous) => ({
+        ...previous,
+        quotes: previous.quotes.map((entry) =>
+          entry.id === quoteId
+            ? {
+                ...entry,
+                updatedAt: nowIso,
+                comments: [comment, ...(entry.comments ?? [])],
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createQuoteActivityEvent({
+                    event: 'comment_added',
+                    at: nowIso,
+                    message: 'Comment added.',
+                  }),
+                ],
+              }
+            : entry,
+        ),
+      }));
+
+      return { ok: true, data: comment };
+    },
+    addQuoteAttachment: (quoteId, input) => {
+      const quote = selectQuoteById(state, quoteId);
+      if (!quote) return { ok: false, error: 'Quote not found.' };
+      if (!input.fileName.trim()) return { ok: false, error: 'File name is required.' };
+      if (input.sizeBytes <= 0) return { ok: false, error: 'Attachment size must be greater than zero.' };
+
+      const nowIso = new Date().toISOString();
+      const attachment: QuoteAttachment = {
+        id: createId('qatt'),
+        fileName: input.fileName.trim(),
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        dataUrl: input.dataUrl,
+        storageKey: input.storageKey,
+        createdAt: nowIso,
+      };
+
+      commit((previous) => ({
+        ...previous,
+        quotes: previous.quotes.map((entry) =>
+          entry.id === quoteId
+            ? {
+                ...entry,
+                updatedAt: nowIso,
+                attachments: [attachment, ...(entry.attachments ?? [])],
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createQuoteActivityEvent({
+                    event: 'attachment_added',
+                    at: nowIso,
+                    message: `Attachment added: ${attachment.fileName}.`,
+                  }),
+                ],
+              }
+            : entry,
+        ),
+      }));
+
+      return { ok: true, data: attachment };
+    },
+    removeQuoteAttachment: (quoteId, attachmentId) => {
+      const quote = selectQuoteById(state, quoteId);
+      if (!quote) return { ok: false, error: 'Quote not found.' };
+      const attachment = (quote.attachments ?? []).find((entry) => entry.id === attachmentId);
+      if (!attachment) return { ok: false, error: 'Attachment not found.' };
+
+      const nowIso = new Date().toISOString();
+
+      commit((previous) => ({
+        ...previous,
+        quotes: previous.quotes.map((entry) =>
+          entry.id === quoteId
+            ? {
+                ...entry,
+                updatedAt: nowIso,
+                attachments: (entry.attachments ?? []).filter((item) => item.id !== attachmentId),
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createQuoteActivityEvent({
+                    event: 'attachment_removed',
+                    at: nowIso,
+                    message: `Attachment removed: ${attachment.fileName}.`,
+                  }),
+                ],
+              }
+            : entry,
+        ),
+      }));
+
+      return { ok: true };
+    },
+    updateQuoteConversionPreferences: (quoteId, options) => {
+      const quote = selectQuoteById(state, quoteId);
+      if (!quote) return { ok: false, error: 'Quote not found.' };
+
+      const nowIso = new Date().toISOString();
+      const nextQuote = normalizeQuoteForConsumers({
+        ...quote,
+        updatedAt: nowIso,
+        conversionPreferences: {
+          ...DEFAULT_QUOTE_CONVERSION_PREFERENCES,
+          ...(quote.conversionPreferences ?? {}),
+          ...options,
+        },
+      });
+
+      commit((previous) => ({
+        ...previous,
+        quotes: previous.quotes.map((entry) => (entry.id === quoteId ? nextQuote : entry)),
+      }));
+
+      return { ok: true, data: nextQuote };
     },
     createInvoice: (values) => {
       const validation = validateInvoiceForm(values);

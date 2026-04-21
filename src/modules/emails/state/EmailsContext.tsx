@@ -82,6 +82,10 @@ function buildDefaultDraftFromQuote(input: {
 }): EmailComposeDraft {
   const quote = input.quote;
   const totals = calculateDocumentTotals(quote.items, quote.documentDiscountPercent);
+  const preferredRecipient =
+    quote.recipientEmails && quote.recipientEmails.length > 0
+      ? quote.recipientEmails[0]
+      : input.client?.email ?? '';
 
   const payload = {
     businessName: input.businessName,
@@ -105,7 +109,7 @@ function buildDefaultDraftFromQuote(input: {
     },
     templateKind,
     recipient: {
-      to: input.client?.email ?? '',
+      to: preferredRecipient,
     },
     subject: buildDefaultEmailSubject(templateKind, payload),
     body: buildDefaultEmailBody(templateKind, payload),

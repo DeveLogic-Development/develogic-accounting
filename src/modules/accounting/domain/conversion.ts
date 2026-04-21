@@ -6,8 +6,16 @@ export function convertQuoteToInvoice(input: {
   invoiceNumber: string;
   nowIso: string;
   dueDate: string;
+  options?: {
+    carryCustomerNotes?: boolean;
+    carryTermsAndConditions?: boolean;
+    carryAddresses?: boolean;
+  };
 }): Invoice {
-  const { quote, invoiceId, invoiceNumber, nowIso, dueDate } = input;
+  const { quote, invoiceId, invoiceNumber, nowIso, dueDate, options } = input;
+  const carryCustomerNotes = options?.carryCustomerNotes ?? true;
+  const carryTermsAndConditions = options?.carryTermsAndConditions ?? true;
+  const carryAddresses = options?.carryAddresses ?? true;
 
   return {
     id: invoiceId,
@@ -20,8 +28,10 @@ export function convertQuoteToInvoice(input: {
     templateId: quote.templateId,
     templateVersionId: quote.templateVersionId,
     templateName: quote.templateName,
-    notes: quote.notes,
-    paymentTerms: quote.paymentTerms,
+    notes: carryCustomerNotes ? quote.notes : '',
+    paymentTerms: carryTermsAndConditions
+      ? quote.termsAndConditions ?? quote.paymentTerms
+      : '',
     internalMemo: quote.internalMemo,
     items: quote.items.map((item, index) => ({
       ...item,
@@ -38,7 +48,7 @@ export function convertQuoteToInvoice(input: {
         id: `${invoiceId}_status_1`,
         status: 'approved',
         at: nowIso,
-        note: `Converted from quote ${quote.quoteNumber}`,
+        note: `Converted from quote ${quote.quoteNumber}${carryAddresses ? '' : ' (address snapshots excluded)'}`,
       },
     ],
   };

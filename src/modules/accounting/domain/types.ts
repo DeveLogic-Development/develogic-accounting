@@ -35,6 +35,7 @@ export interface DocumentTotals {
   subtotalMinor: number;
   lineDiscountMinor: number;
   documentDiscountMinor: number;
+  adjustmentMinor: number;
   taxMinor: number;
   totalMinor: number;
 }
@@ -60,9 +61,64 @@ export interface BaseDocumentItem {
 export interface QuoteItem extends BaseDocumentItem {}
 export interface InvoiceItem extends BaseDocumentItem {}
 
+export interface QuoteAddressSnapshot {
+  attention?: string;
+  line1?: string;
+  line2?: string;
+  city?: string;
+  stateRegion?: string;
+  postalCode?: string;
+  countryRegion?: string;
+}
+
+export interface QuoteAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  dataUrl?: string;
+  storageKey?: string;
+}
+
+export interface QuoteComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export interface QuoteActivityEvent {
+  id: string;
+  event:
+    | 'created'
+    | 'updated'
+    | 'status_changed'
+    | 'comment_added'
+    | 'attachment_added'
+    | 'attachment_removed'
+    | 'emailed'
+    | 'converted'
+    | 'duplicated'
+    | 'deleted';
+  at: string;
+  actor?: string;
+  message: string;
+}
+
+export interface QuoteConversionPreferences {
+  carryCustomerNotes: boolean;
+  carryTermsAndConditions: boolean;
+  carryAddresses: boolean;
+}
+
 export interface Quote {
   id: string;
   quoteNumber: string;
+  referenceNumber?: string;
+  salesperson?: string;
+  projectName?: string;
+  subject?: string;
   clientId: string;
   issueDate: string;
   expiryDate: string;
@@ -72,8 +128,17 @@ export interface Quote {
   templateVersionId?: string;
   templateName?: string;
   notes: string;
+  termsAndConditions?: string;
   paymentTerms: string;
   internalMemo: string;
+  adjustmentMinor?: number;
+  recipientEmails?: string[];
+  billingAddressSnapshot?: QuoteAddressSnapshot;
+  shippingAddressSnapshot?: QuoteAddressSnapshot;
+  comments?: QuoteComment[];
+  attachments?: QuoteAttachment[];
+  activityLog?: QuoteActivityEvent[];
+  conversionPreferences?: QuoteConversionPreferences;
   items: QuoteItem[];
   documentDiscountPercent: number;
   createdAt: string;
@@ -124,6 +189,11 @@ export interface Payment {
 }
 
 export interface QuoteFormValues {
+  quoteNumber?: string;
+  referenceNumber?: string;
+  salesperson?: string;
+  projectName?: string;
+  subject?: string;
   clientId: string;
   issueDate: string;
   expiryDate: string;
@@ -131,8 +201,14 @@ export interface QuoteFormValues {
   templateVersionId?: string;
   templateName?: string;
   notes: string;
+  termsAndConditions?: string;
   paymentTerms: string;
   internalMemo: string;
+  adjustment?: number;
+  recipientEmails?: string[];
+  billingAddressSnapshot?: QuoteAddressSnapshot;
+  shippingAddressSnapshot?: QuoteAddressSnapshot;
+  attachments?: QuoteAttachment[];
   documentDiscountPercent: number;
   items: QuoteItemFormValues[];
 }
@@ -225,6 +301,7 @@ export interface InvoiceTransitionInput {
 export interface QuoteSummary {
   id: string;
   quoteNumber: string;
+  referenceNumber?: string;
   clientId: string;
   status: QuoteStatus;
   issueDate: string;

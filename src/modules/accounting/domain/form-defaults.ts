@@ -26,6 +26,11 @@ export function createEmptyLineItem(position: number): QuoteItemFormValues {
 export function createDefaultQuoteFormValues(): QuoteFormValues {
   const issueDate = todayIsoDate();
   return {
+    quoteNumber: undefined,
+    referenceNumber: '',
+    salesperson: '',
+    projectName: '',
+    subject: '',
     clientId: '',
     issueDate,
     expiryDate: addDaysIsoDate(issueDate, 14),
@@ -33,8 +38,14 @@ export function createDefaultQuoteFormValues(): QuoteFormValues {
     templateVersionId: undefined,
     templateName: 'Modern Quote',
     notes: 'Thank you for the opportunity. This quote is valid for 14 days.',
+    termsAndConditions: '',
     paymentTerms: 'Payment due within 14 days.',
     internalMemo: '',
+    adjustment: 0,
+    recipientEmails: [],
+    billingAddressSnapshot: undefined,
+    shippingAddressSnapshot: undefined,
+    attachments: [],
     documentDiscountPercent: 0,
     items: [createEmptyLineItem(1)],
   };

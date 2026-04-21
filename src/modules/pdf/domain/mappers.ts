@@ -21,7 +21,11 @@ interface SnapshotInputBase {
 
 export function mapQuoteToRenderSnapshot(input: SnapshotInputBase & { quote: Quote }): DocumentRenderSnapshot {
   const { quote, template, templateVersion, capturedAt, client, businessSettings } = input;
-  const totals = calculateDocumentTotals(quote.items, quote.documentDiscountPercent);
+  const totals = calculateDocumentTotals(
+    quote.items,
+    quote.documentDiscountPercent,
+    quote.adjustmentMinor ?? 0,
+  );
   const templateConfig = {
     ...templateVersion.config,
     branding: {
@@ -57,7 +61,7 @@ export function mapQuoteToRenderSnapshot(input: SnapshotInputBase & { quote: Quo
       lineItems: buildPreviewRowsFromDomainItems(quote.items),
       totals,
       notes: quote.notes,
-      paymentTerms: quote.paymentTerms,
+      paymentTerms: quote.termsAndConditions ?? quote.paymentTerms,
       clientName: client?.name ?? quote.clientId,
       clientContactName: client?.contactName,
       clientEmail: client?.email,

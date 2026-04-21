@@ -51,6 +51,10 @@ function validateSharedLineItems(
 export function validateQuoteForm(values: QuoteFormValues): ValidationResult {
   const issues: ValidationIssue[] = [];
 
+  if (values.quoteNumber && !/^[A-Za-z0-9\-_\/]+$/.test(values.quoteNumber.trim())) {
+    issues.push({ field: 'quoteNumber', message: 'Quote number contains invalid characters.' });
+  }
+
   if (values.clientId.trim().length === 0) {
     issues.push({ field: 'clientId', message: 'Client is required.' });
   }
@@ -79,6 +83,23 @@ export function validateQuoteForm(values: QuoteFormValues): ValidationResult {
     issues.push({
       field: 'documentDiscountPercent',
       message: 'Document discount must be between 0 and 100.',
+    });
+  }
+
+  if (typeof values.adjustment === 'number' && !Number.isFinite(values.adjustment)) {
+    issues.push({
+      field: 'adjustment',
+      message: 'Adjustment must be a valid number.',
+    });
+  }
+
+  if (
+    values.recipientEmails &&
+    values.recipientEmails.some((email) => email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
+  ) {
+    issues.push({
+      field: 'recipientEmails',
+      message: 'Recipient email list contains one or more invalid addresses.',
     });
   }
 

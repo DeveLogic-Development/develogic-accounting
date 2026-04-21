@@ -4,10 +4,15 @@ import { calculateDocumentTotals, deriveInvoicePaymentSummary } from './calculat
 export function selectQuoteSummaries(state: AccountingState): QuoteSummary[] {
   return state.quotes
     .map((quote) => {
-      const totals = calculateDocumentTotals(quote.items, quote.documentDiscountPercent);
+      const totals = calculateDocumentTotals(
+        quote.items,
+        quote.documentDiscountPercent,
+        quote.adjustmentMinor ?? 0,
+      );
       return {
         id: quote.id,
         quoteNumber: quote.quoteNumber,
+        referenceNumber: quote.referenceNumber,
         clientId: quote.clientId,
         status: quote.status,
         issueDate: quote.issueDate,

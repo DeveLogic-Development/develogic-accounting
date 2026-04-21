@@ -4,6 +4,7 @@ import { clampMinor, percentageOfMinor, multiplyQuantityByUnitPriceMinor } from 
 export function calculateDocumentTotals(
   items: BaseDocumentItem[],
   documentDiscountPercent = 0,
+  adjustmentMinor = 0,
 ): DocumentTotals {
   const lineBreakdown = items
     .filter((item) => item.quantity > 0 && item.unitPriceMinor >= 0)
@@ -30,12 +31,18 @@ export function calculateDocumentTotals(
     documentDiscountMinor,
   );
 
+  const normalizedAdjustmentMinor = Number.isFinite(adjustmentMinor)
+    ? Math.round(adjustmentMinor)
+    : 0;
+  const totalMinor = clampMinor(taxableAfterDocDiscountMinor + taxMinor + normalizedAdjustmentMinor);
+
   return {
     subtotalMinor,
     lineDiscountMinor,
     documentDiscountMinor,
+    adjustmentMinor: normalizedAdjustmentMinor,
     taxMinor,
-    totalMinor: taxableAfterDocDiscountMinor + taxMinor,
+    totalMinor,
   };
 }
 
@@ -67,7 +74,7 @@ function calculateTaxWithProportionalDocumentDiscount(
 
 export function deriveInvoicePaymentSummary(
   invoice: Invoice,
-  payments: Payment[],
+  payments: Array<Pick<Payment, 'invoiceId' | 'amountMinor'>>,
   nowIso = new Date().toISOString(),
 ): DocumentPaymentSummary {
   const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);

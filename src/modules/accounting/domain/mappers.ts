@@ -12,6 +12,11 @@ import { fromMinor, toMinor } from './money';
 
 export function mapQuoteToFormValues(quote: Quote): QuoteFormValues {
   return {
+    quoteNumber: quote.quoteNumber,
+    referenceNumber: quote.referenceNumber ?? '',
+    salesperson: quote.salesperson ?? '',
+    projectName: quote.projectName ?? '',
+    subject: quote.subject ?? '',
     clientId: quote.clientId,
     issueDate: quote.issueDate,
     expiryDate: quote.expiryDate,
@@ -19,8 +24,14 @@ export function mapQuoteToFormValues(quote: Quote): QuoteFormValues {
     templateVersionId: quote.templateVersionId,
     templateName: quote.templateName,
     notes: quote.notes,
+    termsAndConditions: quote.termsAndConditions ?? quote.paymentTerms,
     paymentTerms: quote.paymentTerms,
     internalMemo: quote.internalMemo,
+    adjustment: (quote.adjustmentMinor ?? 0) / 100,
+    recipientEmails: quote.recipientEmails ?? [],
+    billingAddressSnapshot: quote.billingAddressSnapshot,
+    shippingAddressSnapshot: quote.shippingAddressSnapshot,
+    attachments: quote.attachments ?? [],
     documentDiscountPercent: quote.documentDiscountPercent,
     items: quote.items
       .slice()

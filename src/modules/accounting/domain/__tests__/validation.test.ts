@@ -9,8 +9,11 @@ describe('validation', () => {
       expiryDate: '2026-04-09',
       templateId: undefined,
       templateVersionId: undefined,
+      quoteNumber: 'bad number !',
       notes: '',
       paymentTerms: '',
+      adjustment: Number.NaN,
+      recipientEmails: ['valid@example.com', 'not-an-email'],
       internalMemo: '',
       documentDiscountPercent: 0,
       items: [
