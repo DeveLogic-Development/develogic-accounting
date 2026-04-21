@@ -26,12 +26,17 @@ export function selectQuoteSummaries(state: AccountingState): QuoteSummary[] {
 export function selectInvoiceSummaries(state: AccountingState, nowIso = new Date().toISOString()): InvoiceSummary[] {
   return state.invoices
     .map((invoice) => {
-      const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);
+      const totals = calculateDocumentTotals(
+        invoice.items,
+        invoice.documentDiscountPercent,
+        invoice.adjustmentMinor ?? 0,
+      );
       const payment = deriveInvoicePaymentSummary(invoice, state.payments, nowIso);
 
       return {
         id: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
+        orderNumber: invoice.orderNumber,
         clientId: invoice.clientId,
         status: payment.derivedStatus,
         issueDate: invoice.issueDate,
@@ -39,6 +44,8 @@ export function selectInvoiceSummaries(state: AccountingState, nowIso = new Date
         totalMinor: totals.totalMinor,
         paidMinor: payment.paidMinor,
         outstandingMinor: payment.outstandingMinor,
+        terms: invoice.terms,
+        salesperson: invoice.salesperson,
       };
     })
     .sort((a, b) => b.issueDate.localeCompare(a.issueDate));

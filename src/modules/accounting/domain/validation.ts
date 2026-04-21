@@ -111,8 +111,20 @@ export function validateQuoteForm(values: QuoteFormValues): ValidationResult {
 export function validateInvoiceForm(values: InvoiceFormValues): ValidationResult {
   const issues: ValidationIssue[] = [];
 
+  if (values.invoiceNumber && !/^[A-Za-z0-9\-_\/]+$/.test(values.invoiceNumber.trim())) {
+    issues.push({ field: 'invoiceNumber', message: 'Invoice number contains invalid characters.' });
+  }
+
   if (values.clientId.trim().length === 0) {
     issues.push({ field: 'clientId', message: 'Client is required.' });
+  }
+
+  if (!values.accountsReceivableAccountId || values.accountsReceivableAccountId.trim().length === 0) {
+    issues.push({ field: 'accountsReceivableAccountId', message: 'Accounts receivable account is required.' });
+  }
+
+  if (!values.terms.trim()) {
+    issues.push({ field: 'terms', message: 'Invoice terms are required.' });
   }
 
   if (!values.issueDate) {
@@ -139,6 +151,23 @@ export function validateInvoiceForm(values: InvoiceFormValues): ValidationResult
     issues.push({
       field: 'documentDiscountPercent',
       message: 'Document discount must be between 0 and 100.',
+    });
+  }
+
+  if (typeof values.adjustment === 'number' && !Number.isFinite(values.adjustment)) {
+    issues.push({
+      field: 'adjustment',
+      message: 'Adjustment must be a valid number.',
+    });
+  }
+
+  if (
+    values.recipientEmails &&
+    values.recipientEmails.some((email) => email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
+  ) {
+    issues.push({
+      field: 'recipientEmails',
+      message: 'Recipient email list contains one or more invalid addresses.',
     });
   }
 

@@ -10,6 +10,8 @@ export type InvoiceStatus =
   | 'void';
 
 export type PaymentMethod = 'bank_transfer' | 'card' | 'cash' | 'mobile_money' | 'other';
+export type RecurringInvoiceFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+export type RecurringInvoiceStatus = 'draft' | 'active' | 'paused';
 
 export interface CurrencyAmount {
   currencyCode: string;
@@ -79,6 +81,29 @@ export interface QuoteAttachment {
   createdAt: string;
   dataUrl?: string;
   storageKey?: string;
+}
+
+export type InvoiceAddressSnapshot = QuoteAddressSnapshot;
+export type InvoiceAttachment = QuoteAttachment;
+
+export interface InvoiceActivityEvent {
+  id: string;
+  event:
+    | 'created'
+    | 'updated'
+    | 'status_changed'
+    | 'attachment_added'
+    | 'attachment_removed'
+    | 'emailed'
+    | 'payment_recorded'
+    | 'duplicated'
+    | 'voided'
+    | 'deleted'
+    | 'recurring_requested'
+    | 'credit_note_requested';
+  at: string;
+  actor?: string;
+  message: string;
 }
 
 export interface QuoteComment {
@@ -155,9 +180,14 @@ export interface Quote {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
+  orderNumber?: string;
+  accountsReceivableAccountId?: string;
+  salesperson?: string;
+  subject?: string;
   clientId: string;
   issueDate: string;
   dueDate: string;
+  terms: string;
   currencyCode: string;
   status: InvoiceStatus;
   templateId?: string;
@@ -165,8 +195,15 @@ export interface Invoice {
   templateName?: string;
   notes: string;
   paymentTerms: string;
+  termsAndConditions?: string;
   internalMemo: string;
+  recipientEmails?: string[];
+  billingAddressSnapshot?: InvoiceAddressSnapshot;
+  shippingAddressSnapshot?: InvoiceAddressSnapshot;
+  attachments?: InvoiceAttachment[];
+  activityLog?: InvoiceActivityEvent[];
   items: InvoiceItem[];
+  adjustmentMinor?: number;
   documentDiscountPercent: number;
   sourceQuoteId?: string;
   createdAt: string;
@@ -226,15 +263,27 @@ export interface QuoteItemFormValues {
 }
 
 export interface InvoiceFormValues {
+  invoiceNumber?: string;
+  orderNumber?: string;
+  accountsReceivableAccountId?: string;
+  salesperson?: string;
+  subject?: string;
   clientId: string;
   issueDate: string;
+  terms: string;
   dueDate: string;
   templateId?: string;
   templateVersionId?: string;
   templateName?: string;
   notes: string;
   paymentTerms: string;
+  termsAndConditions?: string;
   internalMemo: string;
+  adjustment?: number;
+  recipientEmails?: string[];
+  billingAddressSnapshot?: InvoiceAddressSnapshot;
+  shippingAddressSnapshot?: InvoiceAddressSnapshot;
+  attachments?: InvoiceAttachment[];
   documentDiscountPercent: number;
   items: InvoiceItemFormValues[];
 }
@@ -312,6 +361,7 @@ export interface QuoteSummary {
 export interface InvoiceSummary {
   id: string;
   invoiceNumber: string;
+  orderNumber?: string;
   clientId: string;
   status: InvoiceStatus;
   issueDate: string;
@@ -319,12 +369,32 @@ export interface InvoiceSummary {
   totalMinor: number;
   paidMinor: number;
   outstandingMinor: number;
+  terms?: string;
+  salesperson?: string;
+}
+
+export interface RecurringInvoiceProfile {
+  id: string;
+  sourceInvoiceId: string;
+  sourceInvoiceNumber: string;
+  clientId: string;
+  profileName: string;
+  frequency: RecurringInvoiceFrequency;
+  interval: number;
+  startDate: string;
+  nextRunDate: string;
+  endDate?: string;
+  autoSend: boolean;
+  status: RecurringInvoiceStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AccountingState {
   quotes: Quote[];
   invoices: Invoice[];
   payments: Payment[];
+  recurringInvoiceProfiles: RecurringInvoiceProfile[];
   quoteSequenceNext: number;
   invoiceSequenceNext: number;
 }

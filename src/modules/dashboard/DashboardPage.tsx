@@ -9,7 +9,6 @@ import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { InlineNotice } from '@/design-system/patterns/InlineNotice';
 import { useDashboardInsights } from '@/modules/insights/hooks/useInsights';
 import { appConfig } from '@/config/appConfig';
-import { useEmails } from '@/modules/emails/hooks/useEmails';
 
 function TrendBars(props: { rows: Array<{ label: string; invoicedMinor: number; paidMinor: number }> }) {
   const max = Math.max(
@@ -54,7 +53,6 @@ function TrendBars(props: { rows: Array<{ label: string; invoicedMinor: number; 
 
 export function DashboardPage() {
   const insights = useDashboardInsights();
-  const { emailCapability, emailCapabilityLoading } = useEmails();
 
   return (
     <>
@@ -73,35 +71,17 @@ export function DashboardPage() {
         }
       />
 
-      {appConfig.warnings.length > 0 || !emailCapabilityLoading ? (
-        <div className="dl-grid cols-2" style={{ marginBottom: 16 }}>
-          {appConfig.warnings.length > 0 ? (
-            <Card title="Configuration Notes" subtitle="Environment setup not fully complete yet">
-              <div style={{ display: 'grid', gap: 8 }}>
-                {appConfig.warnings.map((warning) => (
-                  <InlineNotice key={warning} tone="warning">
-                    {warning}
-                  </InlineNotice>
-                ))}
-              </div>
-            </Card>
-          ) : null}
-          {!emailCapabilityLoading ? (
-            <Card title="Email Capability" subtitle="Current server transport readiness">
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div>
-                  <strong>Status:</strong>{' '}
-                  {emailCapability.canSend ? 'Available' : 'Unavailable'}
-                </div>
-                <div>
-                  <strong>Mode:</strong> {emailCapability.mode}
-                </div>
-                {emailCapability.reason ? (
-                  <div className="dl-muted">{emailCapability.reason}</div>
-                ) : null}
-              </div>
-            </Card>
-          ) : null}
+      {appConfig.warnings.length > 0 ? (
+        <div style={{ marginBottom: 16 }}>
+          <Card title="Configuration Notes" subtitle="Environment setup not fully complete yet">
+            <div style={{ display: 'grid', gap: 8 }}>
+              {appConfig.warnings.map((warning) => (
+                <InlineNotice key={warning} tone="warning">
+                  {warning}
+                </InlineNotice>
+              ))}
+            </div>
+          </Card>
         </div>
       ) : null}
 

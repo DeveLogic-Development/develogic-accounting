@@ -1,7 +1,8 @@
 export interface NavItem {
   to: string;
   label: string;
-  icon: string;
+  icon?: string;
+  children?: NavItem[];
 }
 
 export interface NavGroup {
@@ -18,7 +19,12 @@ export const sidebarNav: NavGroup[] = [
       { to: '/clients', label: 'Customers', icon: '◎' },
       { to: '/items', label: 'Items', icon: '◫' },
       { to: '/quotes', label: 'Quotes', icon: '✦' },
-      { to: '/invoices', label: 'Invoices', icon: '◩' },
+      {
+        to: '/invoices',
+        label: 'Invoices',
+        icon: '◩',
+        children: [{ to: '/invoices/recurring', label: 'Recurring Invoices', icon: '↻' }],
+      },
     ],
   },
   {

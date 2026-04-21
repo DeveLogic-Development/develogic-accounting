@@ -38,7 +38,9 @@ describe('validation', () => {
     const result = validateInvoiceForm({
       clientId: 'cl_001',
       issueDate: '2026-04-01',
+      terms: 'net_30',
       dueDate: '2026-04-30',
+      accountsReceivableAccountId: 'accounts_receivable',
       templateId: 'tpl_001',
       templateVersionId: 'tplver_001',
       notes: '',

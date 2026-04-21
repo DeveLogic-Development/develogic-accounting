@@ -69,13 +69,8 @@ export function PdfArchivePage() {
   );
 
   useEffect(() => {
-    if (filtered.length === 0) {
+    if (selectedId && !filtered.some((entry) => entry.id === selectedId)) {
       setSelectedId(undefined);
-      return;
-    }
-
-    if (!selectedId || !filtered.some((entry) => entry.id === selectedId)) {
-      setSelectedId(filtered[0].id);
     }
   }, [filtered, selectedId]);
 
@@ -172,55 +167,24 @@ export function PdfArchivePage() {
           description="Generate PDFs from quote or invoice screens to populate archive history."
         />
       ) : (
-        <div className="dl-grid cols-2">
-          <div>
-            <ResponsiveList
-              headers={['Type', 'Document #', 'Client', 'Mode', 'Generated', 'Actions']}
-              desktopRows={
-                <>
-                  {filtered.map((entry) => (
-                    <tr key={entry.id}>
-                      <td>{entry.documentType === 'quote' ? 'Quote' : 'Invoice'}</td>
-                      <td>{entry.documentNumber}</td>
-                      <td>{entry.clientName}</td>
-                      <td>
-                        <span className={`dl-badge ${entry.immutable ? 'success' : 'info'}`}>
-                          {toGenerationModeLabel(entry.generationMode)}
-                        </span>
-                      </td>
-                      <td>{formatDate(entry.generatedAt)}</td>
-                      <td>
-                        <div className="dl-inline-actions">
-                          <Button size="sm" onClick={() => setSelectedId(entry.id)}>
-                            Preview
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={() => handleOpen(entry.id)}>
-                            Open
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDownload(entry.id)}>
-                            Download
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </>
-              }
-              mobileCards={
-                <>
-                  {filtered.map((entry) => (
-                    <article key={entry.id} className="dl-mobile-item">
-                      <div className="dl-mobile-item-header">
-                        <strong>{entry.documentNumber}</strong>
-                        <span className={`dl-badge ${entry.immutable ? 'success' : 'info'}`}>
-                          {entry.immutable ? 'Immutable' : 'Draft'}
-                        </span>
-                      </div>
-                      <div>{entry.clientName}</div>
-                      <div className="dl-muted" style={{ fontSize: 12, marginTop: 4 }}>
-                        {toGenerationModeLabel(entry.generationMode)} · {formatDate(entry.generatedAt)}
-                      </div>
-                      <div className="dl-inline-actions" style={{ marginTop: 10 }}>
+        <div className="dl-page-stack">
+          <ResponsiveList
+            headers={['Type', 'Document #', 'Client', 'Mode', 'Generated', 'Actions']}
+            desktopRows={
+              <>
+                {filtered.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.documentType === 'quote' ? 'Quote' : 'Invoice'}</td>
+                    <td>{entry.documentNumber}</td>
+                    <td>{entry.clientName}</td>
+                    <td>
+                      <span className={`dl-badge ${entry.immutable ? 'success' : 'info'}`}>
+                        {toGenerationModeLabel(entry.generationMode)}
+                      </span>
+                    </td>
+                    <td>{formatDate(entry.generatedAt)}</td>
+                    <td>
+                      <div className="dl-inline-actions">
                         <Button size="sm" onClick={() => setSelectedId(entry.id)}>
                           Preview
                         </Button>
@@ -231,15 +195,52 @@ export function PdfArchivePage() {
                           Download
                         </Button>
                       </div>
-                    </article>
-                  ))}
-                </>
-              }
-            />
-          </div>
+                    </td>
+                  </tr>
+                ))}
+              </>
+            }
+            mobileCards={
+              <>
+                {filtered.map((entry) => (
+                  <article key={entry.id} className="dl-mobile-item">
+                    <div className="dl-mobile-item-header">
+                      <strong>{entry.documentNumber}</strong>
+                      <span className={`dl-badge ${entry.immutable ? 'success' : 'info'}`}>
+                        {entry.immutable ? 'Immutable' : 'Draft'}
+                      </span>
+                    </div>
+                    <div>{entry.clientName}</div>
+                    <div className="dl-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      {toGenerationModeLabel(entry.generationMode)} · {formatDate(entry.generatedAt)}
+                    </div>
+                    <div className="dl-inline-actions" style={{ marginTop: 10 }}>
+                      <Button size="sm" onClick={() => setSelectedId(entry.id)}>
+                        Preview
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => handleOpen(entry.id)}>
+                        Open
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDownload(entry.id)}>
+                        Download
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </>
+            }
+          />
 
-          <Card title="Archive Preview" subtitle="Selected PDF snapshot and metadata">
-            {selectedRecord && selectedRow ? (
+          {selectedRecord && selectedRow ? (
+            <Card
+              title="Archive Preview"
+              subtitle="Selected PDF snapshot and metadata"
+              action={
+                <Button size="sm" variant="ghost" onClick={() => setSelectedId(undefined)}>
+                  Close Preview
+                </Button>
+              }
+            >
               <div style={{ display: 'grid', gap: 10 }}>
                 <div className="dl-preview-pane" style={{ minHeight: 260, padding: 10 }}>
                   <iframe
@@ -292,12 +293,8 @@ export function PdfArchivePage() {
                   </Button>
                 </div>
               </div>
-            ) : (
-              <p className="dl-muted" style={{ margin: 0 }}>
-                Select an archive record to inspect preview metadata.
-              </p>
-            )}
-          </Card>
+            </Card>
+          ) : null}
         </div>
       )}
     </>

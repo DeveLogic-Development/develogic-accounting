@@ -8,6 +8,7 @@ import { ToastViewport } from '@/modules/notifications/components/ToastViewport'
 import { SystemNotificationSync } from '@/modules/notifications/components/SystemNotificationSync';
 import { useBusinessSettings } from '@/modules/settings/hooks/useBusinessSettings';
 import { useAuth } from '@/modules/auth/hooks/useAuth';
+import type { NavItem } from '@/app/navigation';
 
 function breadcrumbsFromPath(pathname: string): string[] {
   const parts = pathname.split('/').filter(Boolean);
@@ -28,6 +29,23 @@ export function AppLayout() {
   const { userEmail, signOut } = useAuth();
   const crumbs = breadcrumbsFromPath(location.pathname);
 
+  const renderSidebarItem = (item: NavItem, isSubItem = false) => (
+    <div key={item.to}>
+      <NavLink
+        to={item.to}
+        className={({ isActive }) =>
+          `${isSubItem ? 'dl-nav-sublink' : 'dl-nav-link'} ${isActive ? 'active' : ''}`
+        }
+      >
+        {item.icon ? <span aria-hidden>{item.icon}</span> : null}
+        <span>{item.label}</span>
+      </NavLink>
+      {item.children && item.children.length > 0 ? (
+        <div className="dl-nav-submenu">{item.children.map((child) => renderSidebarItem(child, true))}</div>
+      ) : null}
+    </div>
+  );
+
   return (
     <div className="dl-layout">
       <aside className="dl-sidebar" aria-label="Primary navigation">
@@ -42,16 +60,7 @@ export function AppLayout() {
         {sidebarNav.map((group) => (
           <nav key={group.label} className="dl-nav-group" aria-label={group.label}>
             <div className="dl-nav-group-label">{group.label}</div>
-            {group.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => `dl-nav-link ${isActive ? 'active' : ''}`}
-              >
-                <span aria-hidden>{item.icon}</span>
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
+            {group.items.map((item) => renderSidebarItem(item))}
           </nav>
         ))}
       </aside>

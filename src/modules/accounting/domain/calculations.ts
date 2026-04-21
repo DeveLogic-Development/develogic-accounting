@@ -77,7 +77,7 @@ export function deriveInvoicePaymentSummary(
   payments: Array<Pick<Payment, 'invoiceId' | 'amountMinor'>>,
   nowIso = new Date().toISOString(),
 ): DocumentPaymentSummary {
-  const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);
+  const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent, invoice.adjustmentMinor ?? 0);
   const paidMinor = payments
     .filter((payment) => payment.invoiceId === invoice.id)
     .reduce((sum, payment) => sum + payment.amountMinor, 0);

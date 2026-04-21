@@ -42,15 +42,27 @@ export function mapQuoteToFormValues(quote: Quote): QuoteFormValues {
 
 export function mapInvoiceToFormValues(invoice: Invoice): InvoiceFormValues {
   return {
+    invoiceNumber: invoice.invoiceNumber,
+    orderNumber: invoice.orderNumber ?? '',
+    accountsReceivableAccountId: invoice.accountsReceivableAccountId ?? '',
+    salesperson: invoice.salesperson ?? '',
+    subject: invoice.subject ?? '',
     clientId: invoice.clientId,
     issueDate: invoice.issueDate,
+    terms: invoice.terms || 'custom',
     dueDate: invoice.dueDate,
     templateId: invoice.templateId,
     templateVersionId: invoice.templateVersionId,
     templateName: invoice.templateName,
     notes: invoice.notes,
-    paymentTerms: invoice.paymentTerms,
+    paymentTerms: invoice.paymentTerms || invoice.terms,
+    termsAndConditions: invoice.termsAndConditions ?? invoice.paymentTerms,
     internalMemo: invoice.internalMemo,
+    adjustment: (invoice.adjustmentMinor ?? 0) / 100,
+    recipientEmails: invoice.recipientEmails ?? [],
+    billingAddressSnapshot: invoice.billingAddressSnapshot,
+    shippingAddressSnapshot: invoice.shippingAddressSnapshot,
+    attachments: invoice.attachments ?? [],
     documentDiscountPercent: invoice.documentDiscountPercent,
     items: invoice.items
       .slice()

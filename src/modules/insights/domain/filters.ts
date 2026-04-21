@@ -5,8 +5,10 @@ export function matchesSearchText(search: string, fields: Array<string | number 
   return fields.some((field) => String(field ?? '').toLowerCase().includes(normalized));
 }
 
-export function matchesDateRange(dateIso: string, from?: string, to?: string): boolean {
+export function matchesDateRange(dateIso: string | null | undefined, from?: string, to?: string): boolean {
+  if (!dateIso) return !from && !to;
   const date = dateIso.slice(0, 10);
+  if (!date) return !from && !to;
   if (from && date < from) return false;
   if (to && date > to) return false;
   return true;

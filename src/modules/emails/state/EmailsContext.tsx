@@ -202,14 +202,14 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
           recipientEmail: log.recipient.to,
           subject: log.subject,
           bodySnippet: log.bodySnippet,
-          attemptedAt: log.attemptedAt,
+          attemptedAt: log.attemptedAt ?? '',
           sentAt: log.sentAt,
           hasAttachment: Boolean(log.attachment),
           attachmentFileName: log.attachment?.fileName,
           resendOfLogId: log.resendOfLogId,
           errorMessage: log.errorMessage,
         }))
-        .sort((a, b) => b.attemptedAt.localeCompare(a.attemptedAt)),
+        .sort((a, b) => (b.attemptedAt ?? '').localeCompare(a.attemptedAt ?? '')),
     [state.logs],
   );
 

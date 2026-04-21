@@ -53,7 +53,7 @@ export function EmailHistoryPage() {
       const filteredRows = rows.filter((entry) => {
         const statusMatch = status === 'all' || entry.status === status;
         const typeMatch = type === 'all' || entry.documentType === type;
-        const dateMatch = matchesDateRange(entry.attemptedAt, dateFrom || undefined, dateTo || undefined);
+        const dateMatch = matchesDateRange(entry.attemptedAt ?? undefined, dateFrom || undefined, dateTo || undefined);
         const searchMatch = matchesSearchText(search, [
           entry.documentNumber,
           entry.recipientEmail,
@@ -65,8 +65,8 @@ export function EmailHistoryPage() {
       });
 
       filteredRows.sort((a, b) => {
-        if (sort === 'attempted_asc') return a.attemptedAt.localeCompare(b.attemptedAt);
-        return b.attemptedAt.localeCompare(a.attemptedAt);
+        if (sort === 'attempted_asc') return (a.attemptedAt ?? '').localeCompare(b.attemptedAt ?? '');
+        return (b.attemptedAt ?? '').localeCompare(a.attemptedAt ?? '');
       });
 
       return filteredRows;

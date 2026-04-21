@@ -17,6 +17,7 @@ import { QuoteFormPage } from '@/modules/quotes/QuoteFormPage';
 import { InvoicesListPage } from '@/modules/invoices/InvoicesListPage';
 import { InvoiceDetailPage } from '@/modules/invoices/InvoiceDetailPage';
 import { InvoiceFormPage } from '@/modules/invoices/InvoiceFormPage';
+import { RecurringInvoicesPage } from '@/modules/invoices/RecurringInvoicesPage';
 import { TemplateLibraryPage } from '@/modules/templates/TemplateLibraryPage';
 import { TemplateEditorPage } from '@/modules/templates/TemplateEditorPage';
 import { BusinessSettingsPage } from '@/modules/settings/BusinessSettingsPage';
@@ -59,6 +60,7 @@ export function AppRouter() {
 
             <Route path="invoices" element={<InvoicesListPage />} />
             <Route path="invoices/new" element={<InvoiceFormPage />} />
+            <Route path="invoices/recurring" element={<RecurringInvoicesPage />} />
             <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
             <Route path="invoices/:invoiceId/edit" element={<InvoiceFormPage />} />
 

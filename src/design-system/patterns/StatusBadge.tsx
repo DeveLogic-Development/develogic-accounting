@@ -80,6 +80,7 @@ function getEmailVariant(status: EmailStatusValue): BadgeVariant {
 
 const labelMap: Record<string, string> = {
   partially_paid: 'Partially Paid',
+  approved: 'Open',
 };
 
 function prettyLabel(status: string): string {

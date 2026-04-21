@@ -4,6 +4,8 @@ import { LocalStorageAccountingRepository } from '../data/localStorageRepository
 import {
   AccountingState,
   Invoice,
+  InvoiceActivityEvent,
+  InvoiceAttachment,
   InvoiceFormValues,
   Payment,
   PaymentInput,
@@ -13,10 +15,13 @@ import {
   QuoteComment,
   QuoteConversionPreferences,
   QuoteFormValues,
+  RecurringInvoiceFrequency,
+  RecurringInvoiceProfile,
+  RecurringInvoiceStatus,
 } from '../domain/types';
 import { validateInvoiceForm, validatePaymentInput, validateQuoteForm } from '../domain/validation';
 import { mapInvoiceItemsFormToDomain, mapQuoteItemsFormToDomain } from '../domain/mappers';
-import { addDaysIsoDate, todayIsoDate } from '../domain/date';
+import { addDaysIsoDate, addRecurringIntervalIsoDate, todayIsoDate } from '../domain/date';
 import { createId } from '../domain/id';
 import { canConvertQuote, canEditQuote, canTransitionQuote } from '../domain/quote-rules';
 import { canEditInvoice, canRecordPayment, canTransitionInvoice } from '../domain/invoice-rules';
@@ -37,8 +42,10 @@ interface AccountingContextValue {
   state: AccountingState;
   quoteSummaries: ReturnType<typeof selectQuoteSummaries>;
   invoiceSummaries: ReturnType<typeof selectInvoiceSummaries>;
+  recurringInvoiceProfiles: RecurringInvoiceProfile[];
   getQuoteById: (quoteId: string) => Quote | undefined;
   getInvoiceById: (invoiceId: string) => Invoice | undefined;
+  getRecurringInvoiceProfileById: (profileId: string) => RecurringInvoiceProfile | undefined;
   getInvoicePayments: (invoiceId: string) => Payment[];
   getInvoicePaymentSummary: (invoiceId: string) => ReturnType<typeof deriveInvoicePaymentSummary> | undefined;
   createQuote: (values: QuoteFormValues) => ActionResult<Quote>;
@@ -71,6 +78,37 @@ interface AccountingContextValue {
   duplicateInvoice: (invoiceId: string) => ActionResult<Invoice>;
   transitionInvoice: (invoiceId: string, target: Invoice['status'], note?: string) => ActionResult<Invoice>;
   recordPayment: (invoiceId: string, input: PaymentInput) => ActionResult;
+  addInvoiceAttachment: (
+    invoiceId: string,
+    input: {
+      fileName: string;
+      mimeType: string;
+      sizeBytes: number;
+      dataUrl?: string;
+      storageKey?: string;
+    },
+  ) => ActionResult<InvoiceAttachment>;
+  removeInvoiceAttachment: (invoiceId: string, attachmentId: string) => ActionResult;
+  requestInvoiceRecurring: (invoiceId: string) => ActionResult<Invoice>;
+  updateRecurringInvoiceProfile: (
+    profileId: string,
+    input: {
+      profileName: string;
+      frequency: RecurringInvoiceFrequency;
+      interval: number;
+      startDate: string;
+      nextRunDate: string;
+      endDate?: string;
+      autoSend: boolean;
+    },
+  ) => ActionResult<RecurringInvoiceProfile>;
+  setRecurringInvoiceProfileStatus: (
+    profileId: string,
+    status: RecurringInvoiceStatus,
+  ) => ActionResult<RecurringInvoiceProfile>;
+  deleteRecurringInvoiceProfile: (profileId: string) => ActionResult;
+  requestInvoiceCreditNote: (invoiceId: string) => ActionResult<Invoice>;
+  deleteInvoice: (invoiceId: string) => ActionResult;
 }
 
 const repository = new LocalStorageAccountingRepository();
@@ -85,14 +123,22 @@ function isAccountingState(value: unknown): value is AccountingState {
     Array.isArray(candidate.quotes) &&
     Array.isArray(candidate.invoices) &&
     Array.isArray(candidate.payments) &&
+    (candidate.recurringInvoiceProfiles === undefined || Array.isArray(candidate.recurringInvoiceProfiles)) &&
     typeof candidate.quoteSequenceNext === 'number' &&
     typeof candidate.invoiceSequenceNext === 'number'
   );
 }
 
+function normalizeStateForConsumers(state: AccountingState): AccountingState {
+  return {
+    ...state,
+    recurringInvoiceProfiles: state.recurringInvoiceProfiles ?? [],
+  };
+}
+
 function createInitialState(): AccountingState {
   const loaded = repository.load();
-  return isAccountingState(loaded) ? loaded : createSeedState();
+  return isAccountingState(loaded) ? normalizeStateForConsumers(loaded) : createSeedState();
 }
 
 const DEFAULT_QUOTE_CONVERSION_PREFERENCES: QuoteConversionPreferences = {
@@ -135,6 +181,45 @@ function normalizeQuoteForConsumers(quote: Quote): Quote {
   };
 }
 
+function normalizeInvoiceForConsumers(invoice: Invoice): Invoice {
+  return {
+    ...invoice,
+    orderNumber: invoice.orderNumber ?? '',
+    accountsReceivableAccountId: invoice.accountsReceivableAccountId ?? '',
+    salesperson: invoice.salesperson ?? '',
+    subject: invoice.subject ?? '',
+    terms: invoice.terms ?? 'custom',
+    notes: invoice.notes ?? '',
+    paymentTerms: invoice.paymentTerms ?? '',
+    termsAndConditions: invoice.termsAndConditions ?? invoice.paymentTerms ?? '',
+    internalMemo: invoice.internalMemo ?? '',
+    recipientEmails: invoice.recipientEmails ?? [],
+    attachments: invoice.attachments ?? [],
+    activityLog: invoice.activityLog ?? [],
+    adjustmentMinor: invoice.adjustmentMinor ?? 0,
+  };
+}
+
+function createDefaultRecurringProfileFromInvoice(invoice: Invoice, nowIso: string): RecurringInvoiceProfile {
+  const startDate = invoice.issueDate || todayIsoDate();
+  return {
+    id: createId('recurring'),
+    sourceInvoiceId: invoice.id,
+    sourceInvoiceNumber: invoice.invoiceNumber,
+    clientId: invoice.clientId,
+    profileName: `${invoice.invoiceNumber} Recurring`,
+    frequency: 'monthly',
+    interval: 1,
+    startDate,
+    nextRunDate: startDate,
+    endDate: undefined,
+    autoSend: false,
+    status: 'draft',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
+
 function appendStatusEvent<
   TStatus extends string,
   TEntity extends { statusHistory: Array<{ id: string; status: TStatus; at: string; note?: string }> },
@@ -172,6 +257,21 @@ function createQuoteActivityEvent(input: {
   };
 }
 
+function createInvoiceActivityEvent(input: {
+  event: InvoiceActivityEvent['event'];
+  at: string;
+  message: string;
+  actor?: string;
+}): InvoiceActivityEvent {
+  return {
+    id: createId('ievt'),
+    event: input.event,
+    at: input.at,
+    actor: input.actor,
+    message: input.message,
+  };
+}
+
 export function AccountingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AccountingState>(createInitialState);
   const notifications = useNotificationsContext();
@@ -195,7 +295,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
     loadRuntimeState<AccountingState>(REMOTE_STATE_KEY).then((result) => {
       if (!active) return;
       if (result.ok && result.data && isAccountingState(result.data)) {
-        setState(result.data);
+        setState(normalizeStateForConsumers(result.data));
       }
       setRemoteHydrationComplete(true);
     });
@@ -214,6 +314,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
     state,
     quoteSummaries,
     invoiceSummaries,
+    recurringInvoiceProfiles: (state.recurringInvoiceProfiles ?? []).slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     getQuoteById: (quoteId) => {
       const quote = selectQuoteById(state, quoteId);
       return quote ? normalizeQuoteForConsumers(quote) : undefined;
@@ -221,12 +322,15 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
     getInvoiceById: (invoiceId) => {
       const invoice = selectInvoiceById(state, invoiceId);
       if (!invoice) return undefined;
-      const paymentSummary = deriveInvoicePaymentSummary(invoice, state.payments);
+      const normalized = normalizeInvoiceForConsumers(invoice);
+      const paymentSummary = deriveInvoicePaymentSummary(normalized, state.payments);
       return {
-        ...invoice,
+        ...normalized,
         status: paymentSummary.derivedStatus,
       };
     },
+    getRecurringInvoiceProfileById: (profileId) =>
+      (state.recurringInvoiceProfiles ?? []).find((profile) => profile.id === profileId),
     getInvoicePayments: (invoiceId) =>
       state.payments
         .filter((payment) => payment.invoiceId === invoiceId)
@@ -765,23 +869,46 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
 
       commit((previous) => {
         const invoiceId = createId('invoice');
-        const invoiceNumber = `INV-${String(previous.invoiceSequenceNext).padStart(5, '0')}`;
+        const generatedInvoiceNumber = `INV-${String(previous.invoiceSequenceNext).padStart(5, '0')}`;
+        const requestedInvoiceNumber = values.invoiceNumber?.trim();
+        const invoiceNumber =
+          requestedInvoiceNumber && !previous.invoices.some((entry) => entry.invoiceNumber === requestedInvoiceNumber)
+            ? requestedInvoiceNumber
+            : generatedInvoiceNumber;
 
-        createdInvoice = {
+        createdInvoice = normalizeInvoiceForConsumers({
           id: invoiceId,
           invoiceNumber,
+          orderNumber: values.orderNumber?.trim() || undefined,
+          accountsReceivableAccountId: values.accountsReceivableAccountId?.trim() || undefined,
+          salesperson: values.salesperson?.trim() || undefined,
+          subject: values.subject?.trim() || undefined,
           clientId: values.clientId,
           issueDate: values.issueDate,
           dueDate: values.dueDate,
+          terms: values.terms,
           currencyCode: 'ZAR',
           status: 'draft',
           templateId: values.templateId,
           templateVersionId: values.templateVersionId,
           templateName: values.templateName,
           notes: values.notes,
-          paymentTerms: values.paymentTerms,
+          paymentTerms: values.paymentTerms || values.terms,
+          termsAndConditions: values.termsAndConditions ?? values.paymentTerms ?? values.terms,
           internalMemo: values.internalMemo,
+          recipientEmails: normalizeRecipientEmails(values.recipientEmails),
+          billingAddressSnapshot: values.billingAddressSnapshot,
+          shippingAddressSnapshot: values.shippingAddressSnapshot,
+          attachments: values.attachments ?? [],
+          activityLog: [
+            createInvoiceActivityEvent({
+              event: 'created',
+              at: nowIso,
+              message: `Invoice ${invoiceNumber} created.`,
+            }),
+          ],
           items: mapInvoiceItemsFormToDomain(values.items),
+          adjustmentMinor: toMinor(values.adjustment ?? 0),
           documentDiscountPercent: values.documentDiscountPercent,
           createdAt: nowIso,
           updatedAt: nowIso,
@@ -792,7 +919,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
               at: nowIso,
             },
           ],
-        };
+        });
 
         return {
           ...previous,
@@ -820,7 +947,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       const invoice = selectInvoiceById(state, invoiceId);
       if (!invoice) return { ok: false, error: 'Invoice not found.' };
 
-      const summary = deriveInvoicePaymentSummary(invoice, state.payments);
+      const summary = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), state.payments);
       const editable = canEditInvoice(summary.derivedStatus);
       if (!editable.allowed) return { ok: false, error: editable.reason };
 
@@ -830,21 +957,40 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       }
 
       const nowIso = new Date().toISOString();
-      const nextInvoice: Invoice = {
+      const nextInvoice: Invoice = normalizeInvoiceForConsumers({
         ...invoice,
+        orderNumber: values.orderNumber?.trim() || undefined,
+        accountsReceivableAccountId: values.accountsReceivableAccountId?.trim() || undefined,
+        salesperson: values.salesperson?.trim() || undefined,
+        subject: values.subject?.trim() || undefined,
         clientId: values.clientId,
         issueDate: values.issueDate,
         dueDate: values.dueDate,
+        terms: values.terms,
         templateId: values.templateId,
         templateVersionId: values.templateVersionId,
         templateName: values.templateName,
         notes: values.notes,
-        paymentTerms: values.paymentTerms,
+        paymentTerms: values.paymentTerms || values.terms,
+        termsAndConditions: values.termsAndConditions ?? values.paymentTerms ?? values.terms,
         internalMemo: values.internalMemo,
+        recipientEmails: normalizeRecipientEmails(values.recipientEmails),
+        billingAddressSnapshot: values.billingAddressSnapshot,
+        shippingAddressSnapshot: values.shippingAddressSnapshot,
+        attachments: values.attachments ?? invoice.attachments ?? [],
         documentDiscountPercent: values.documentDiscountPercent,
+        adjustmentMinor: toMinor(values.adjustment ?? 0),
         items: mapInvoiceItemsFormToDomain(values.items),
         updatedAt: nowIso,
-      };
+        activityLog: [
+          ...(invoice.activityLog ?? []),
+          createInvoiceActivityEvent({
+            event: 'updated',
+            at: nowIso,
+            message: `Invoice ${invoice.invoiceNumber} updated.`,
+          }),
+        ],
+      });
 
       commit((previous) => ({
         ...previous,
@@ -875,19 +1021,29 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         const nextId = createId('invoice');
         const nextNumber = `INV-${String(previous.invoiceSequenceNext).padStart(5, '0')}`;
 
-        duplicateInvoice = {
+        duplicateInvoice = normalizeInvoiceForConsumers({
           ...source,
           id: nextId,
           invoiceNumber: nextNumber,
+          orderNumber: undefined,
           status: 'draft',
           issueDate,
           dueDate: addDaysIsoDate(issueDate, 14),
+          terms: 'custom',
           sourceQuoteId: undefined,
           createdAt: nowIso,
           updatedAt: nowIso,
           sentAt: undefined,
           voidedAt: undefined,
           approvedAt: undefined,
+          attachments: [],
+          activityLog: [
+            createInvoiceActivityEvent({
+              event: 'duplicated',
+              at: nowIso,
+              message: `Duplicated from ${source.invoiceNumber} into ${nextNumber}.`,
+            }),
+          ],
           statusHistory: [
             {
               id: createId('status'),
@@ -901,7 +1057,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
             id: `${nextId}_item_${index + 1}`,
             position: index + 1,
           })),
-        };
+        });
 
         return {
           ...previous,
@@ -929,22 +1085,33 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       const invoice = selectInvoiceById(state, invoiceId);
       if (!invoice) return { ok: false, error: 'Invoice not found.' };
 
-      const currentStatus = deriveInvoicePaymentSummary(invoice, state.payments).derivedStatus;
+      const currentStatus = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), state.payments).derivedStatus;
       const transition = canTransitionInvoice(currentStatus, target);
       if (!transition.allowed) return { ok: false, error: transition.reason };
 
       const nowIso = new Date().toISOString();
-      let nextInvoice: Invoice = {
+      let nextInvoice: Invoice = normalizeInvoiceForConsumers({
         ...invoice,
         status: target,
         updatedAt: nowIso,
-      };
+      });
 
       if (target === 'sent') nextInvoice.sentAt = nowIso;
       if (target === 'approved') nextInvoice.approvedAt = nowIso;
       if (target === 'void') nextInvoice.voidedAt = nowIso;
 
       nextInvoice = appendStatusEvent(nextInvoice, target, nowIso, note);
+      nextInvoice = {
+        ...nextInvoice,
+        activityLog: [
+          ...(nextInvoice.activityLog ?? []),
+          createInvoiceActivityEvent({
+            event: target === 'void' ? 'voided' : 'status_changed',
+            at: nowIso,
+            message: `Status changed to ${target.replace('_', ' ')}${note ? ` · ${note}` : ''}.`,
+          }),
+        ],
+      };
 
       commit((previous) => ({
         ...previous,
@@ -970,7 +1137,7 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       const invoice = selectInvoiceById(state, invoiceId);
       if (!invoice) return { ok: false, error: 'Invoice not found.' };
 
-      const currentSummary = deriveInvoicePaymentSummary(invoice, state.payments);
+      const currentSummary = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), state.payments);
       const paymentAllowed = canRecordPayment(currentSummary.derivedStatus);
       if (!paymentAllowed.allowed) return { ok: false, error: paymentAllowed.reason };
 
@@ -992,13 +1159,21 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       };
 
       const nextPayments = [payment, ...state.payments];
-      const nextSummary = deriveInvoicePaymentSummary(invoice, nextPayments);
+      const nextSummary = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), nextPayments);
 
-      let nextInvoice: Invoice = {
+      let nextInvoice: Invoice = normalizeInvoiceForConsumers({
         ...invoice,
         status: nextSummary.derivedStatus,
         updatedAt: nowIso,
-      };
+        activityLog: [
+          ...(invoice.activityLog ?? []),
+          createInvoiceActivityEvent({
+            event: 'payment_recorded',
+            at: nowIso,
+            message: `Payment recorded: ${input.amount.toFixed(2)}.`,
+          }),
+        ],
+      });
 
       if (nextSummary.derivedStatus !== invoice.status) {
         nextInvoice = appendStatusEvent(
@@ -1009,10 +1184,34 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         );
       }
 
+      const becamePaid = nextSummary.derivedStatus === 'paid' && currentSummary.derivedStatus !== 'paid';
+      let advancedRecurringProfiles: Array<{ id: string; name: string; nextRunDate: string }> = [];
+
       commit((previous) => ({
         ...previous,
         payments: [payment, ...previous.payments],
         invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
+        recurringInvoiceProfiles: becamePaid
+          ? (previous.recurringInvoiceProfiles ?? []).map((profile) => {
+              if (profile.sourceInvoiceId !== invoiceId) return profile;
+              const baseDate = profile.nextRunDate > invoice.issueDate ? profile.nextRunDate : invoice.issueDate;
+              const nextRunDate = addRecurringIntervalIsoDate(baseDate, profile.frequency, profile.interval);
+              advancedRecurringProfiles = [
+                ...advancedRecurringProfiles,
+                {
+                  id: profile.id,
+                  name: profile.profileName,
+                  nextRunDate,
+                },
+              ];
+              return {
+                ...profile,
+                nextRunDate,
+                status: profile.status === 'draft' ? 'active' : profile.status,
+                updatedAt: nowIso,
+              };
+            })
+          : previous.recurringInvoiceProfiles,
       }));
 
       notifications.notify({
@@ -1041,7 +1240,289 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
           relatedEntityId: invoice.id,
           dedupeKey: `invoice:${invoice.id}:paid`,
         });
+
+        if (advancedRecurringProfiles.length > 0) {
+          const primaryProfile = advancedRecurringProfiles[0];
+          notifications.notify({
+            level: 'info',
+            source: 'invoices',
+            title: 'Recurring Schedule Updated',
+            message:
+              advancedRecurringProfiles.length === 1
+                ? `${primaryProfile.name} moved to next run date ${primaryProfile.nextRunDate}.`
+                : `${advancedRecurringProfiles.length} recurring profiles moved to their next run dates.`,
+            persistent: false,
+            toast: true,
+            route: `/invoices/recurring?invoiceId=${invoice.id}`,
+            dedupeKey: `invoice:${invoice.id}:recurring-next-run`,
+          });
+        }
       }
+
+      return { ok: true };
+    },
+    addInvoiceAttachment: (invoiceId, input) => {
+      const invoice = selectInvoiceById(state, invoiceId);
+      if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      if (!input.fileName.trim()) return { ok: false, error: 'File name is required.' };
+      if (input.sizeBytes <= 0) return { ok: false, error: 'Attachment size must be greater than zero.' };
+
+      const nowIso = new Date().toISOString();
+      const attachment: InvoiceAttachment = {
+        id: createId('iatt'),
+        fileName: input.fileName.trim(),
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        dataUrl: input.dataUrl,
+        storageKey: input.storageKey,
+        createdAt: nowIso,
+      };
+
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.map((entry) =>
+          entry.id === invoiceId
+            ? normalizeInvoiceForConsumers({
+                ...entry,
+                updatedAt: nowIso,
+                attachments: [attachment, ...(entry.attachments ?? [])],
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createInvoiceActivityEvent({
+                    event: 'attachment_added',
+                    at: nowIso,
+                    message: `Attachment added: ${attachment.fileName}.`,
+                  }),
+                ],
+              })
+            : entry,
+        ),
+      }));
+
+      return { ok: true, data: attachment };
+    },
+    removeInvoiceAttachment: (invoiceId, attachmentId) => {
+      const invoice = selectInvoiceById(state, invoiceId);
+      if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      const attachment = (invoice.attachments ?? []).find((entry) => entry.id === attachmentId);
+      if (!attachment) return { ok: false, error: 'Attachment not found.' };
+
+      const nowIso = new Date().toISOString();
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.map((entry) =>
+          entry.id === invoiceId
+            ? normalizeInvoiceForConsumers({
+                ...entry,
+                updatedAt: nowIso,
+                attachments: (entry.attachments ?? []).filter((item) => item.id !== attachmentId),
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createInvoiceActivityEvent({
+                    event: 'attachment_removed',
+                    at: nowIso,
+                    message: `Attachment removed: ${attachment.fileName}.`,
+                  }),
+                ],
+              })
+            : entry,
+        ),
+      }));
+      return { ok: true };
+    },
+    requestInvoiceRecurring: (invoiceId) => {
+      const invoice = selectInvoiceById(state, invoiceId);
+      if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      if (invoice.status === 'void') {
+        return { ok: false, error: 'Voided invoices cannot be converted to recurring profiles.' };
+      }
+
+      const nowIso = new Date().toISOString();
+      const nextInvoice = normalizeInvoiceForConsumers({
+        ...invoice,
+        updatedAt: nowIso,
+        activityLog: [
+          ...(invoice.activityLog ?? []),
+          createInvoiceActivityEvent({
+            event: 'recurring_requested',
+            at: nowIso,
+            message: 'Recurring invoice setup requested from invoice detail.',
+          }),
+        ],
+      });
+
+      const existingProfile = (state.recurringInvoiceProfiles ?? []).find(
+        (profile) => profile.sourceInvoiceId === invoice.id,
+      );
+      const nextProfile =
+        existingProfile
+          ? {
+              ...existingProfile,
+              updatedAt: nowIso,
+            }
+          : createDefaultRecurringProfileFromInvoice(invoice, nowIso);
+
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
+        recurringInvoiceProfiles: existingProfile
+          ? (previous.recurringInvoiceProfiles ?? []).map((entry) =>
+              entry.id === existingProfile.id ? nextProfile : entry,
+            )
+          : [nextProfile, ...(previous.recurringInvoiceProfiles ?? [])],
+      }));
+
+      notifications.notify({
+        level: 'info',
+        source: 'invoices',
+        title: 'Recurring Invoice Profile Ready',
+        message: `Recurring profile is ready for ${invoice.invoiceNumber}.`,
+        persistent: false,
+        toast: true,
+        route: '/invoices/recurring',
+        dedupeKey: `invoice:${invoice.id}:recurring`,
+      });
+
+      return { ok: true, data: nextInvoice };
+    },
+    updateRecurringInvoiceProfile: (profileId, input) => {
+      const profile = (state.recurringInvoiceProfiles ?? []).find((entry) => entry.id === profileId);
+      if (!profile) return { ok: false, error: 'Recurring profile not found.' };
+      if (!input.profileName.trim()) return { ok: false, error: 'Profile name is required.' };
+      if (!input.startDate) return { ok: false, error: 'Start date is required.' };
+      if (!input.nextRunDate) return { ok: false, error: 'Next run date is required.' };
+      if (!Number.isFinite(input.interval) || input.interval < 1) {
+        return { ok: false, error: 'Interval must be at least 1.' };
+      }
+      if (input.endDate && input.endDate < input.startDate) {
+        return { ok: false, error: 'End date cannot be before start date.' };
+      }
+
+      const nowIso = new Date().toISOString();
+      const nextProfile: RecurringInvoiceProfile = {
+        ...profile,
+        profileName: input.profileName.trim(),
+        frequency: input.frequency,
+        interval: Math.floor(input.interval),
+        startDate: input.startDate,
+        nextRunDate: input.nextRunDate,
+        endDate: input.endDate?.trim() || undefined,
+        autoSend: input.autoSend,
+        updatedAt: nowIso,
+      };
+
+      commit((previous) => ({
+        ...previous,
+        recurringInvoiceProfiles: (previous.recurringInvoiceProfiles ?? []).map((entry) =>
+          entry.id === profileId ? nextProfile : entry,
+        ),
+      }));
+
+      return { ok: true, data: nextProfile };
+    },
+    setRecurringInvoiceProfileStatus: (profileId, status) => {
+      const profile = (state.recurringInvoiceProfiles ?? []).find((entry) => entry.id === profileId);
+      if (!profile) return { ok: false, error: 'Recurring profile not found.' };
+      const nowIso = new Date().toISOString();
+      const nextProfile: RecurringInvoiceProfile = {
+        ...profile,
+        status,
+        updatedAt: nowIso,
+      };
+
+      commit((previous) => ({
+        ...previous,
+        recurringInvoiceProfiles: (previous.recurringInvoiceProfiles ?? []).map((entry) =>
+          entry.id === profileId ? nextProfile : entry,
+        ),
+      }));
+
+      return { ok: true, data: nextProfile };
+    },
+    deleteRecurringInvoiceProfile: (profileId) => {
+      const profile = (state.recurringInvoiceProfiles ?? []).find((entry) => entry.id === profileId);
+      if (!profile) return { ok: false, error: 'Recurring profile not found.' };
+
+      commit((previous) => ({
+        ...previous,
+        recurringInvoiceProfiles: (previous.recurringInvoiceProfiles ?? []).filter((entry) => entry.id !== profileId),
+      }));
+
+      notifications.notify({
+        level: 'warning',
+        source: 'invoices',
+        title: 'Recurring Profile Deleted',
+        message: `${profile.profileName} has been removed.`,
+        persistent: false,
+        toast: true,
+        route: '/invoices/recurring',
+        dedupeKey: `recurring:${profile.id}:deleted`,
+      });
+
+      return { ok: true };
+    },
+    requestInvoiceCreditNote: (invoiceId) => {
+      const invoice = selectInvoiceById(state, invoiceId);
+      if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      if (invoice.status === 'draft' || invoice.status === 'void') {
+        return { ok: false, error: 'Credit notes can only be requested for issued invoices.' };
+      }
+
+      const nowIso = new Date().toISOString();
+      const nextInvoice = normalizeInvoiceForConsumers({
+        ...invoice,
+        updatedAt: nowIso,
+        activityLog: [
+          ...(invoice.activityLog ?? []),
+          createInvoiceActivityEvent({
+            event: 'credit_note_requested',
+            at: nowIso,
+            message: 'Credit note request captured from invoice detail.',
+          }),
+        ],
+      });
+
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
+      }));
+
+      notifications.notify({
+        level: 'warning',
+        source: 'invoices',
+        title: 'Credit Note Hook Ready',
+        message: `Credit note request captured for ${invoice.invoiceNumber}.`,
+        persistent: false,
+        toast: true,
+        route: `/invoices/${invoice.id}`,
+        dedupeKey: `invoice:${invoice.id}:credit-note`,
+      });
+
+      return { ok: true, data: nextInvoice };
+    },
+    deleteInvoice: (invoiceId) => {
+      const invoice = selectInvoiceById(state, invoiceId);
+      if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      const summary = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), state.payments);
+      if (summary.paidMinor > 0) {
+        return { ok: false, error: 'Invoices with payments cannot be deleted.' };
+      }
+
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.filter((entry) => entry.id !== invoiceId),
+      }));
+
+      notifications.notify({
+        level: 'warning',
+        source: 'invoices',
+        title: 'Invoice Deleted',
+        message: `${invoice.invoiceNumber} has been deleted.`,
+        persistent: true,
+        toast: true,
+        route: '/invoices',
+        dedupeKey: `invoice:${invoiceId}:deleted`,
+      });
 
       return { ok: true };
     },

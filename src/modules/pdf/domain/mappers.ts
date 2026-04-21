@@ -82,7 +82,11 @@ export function mapQuoteToRenderSnapshot(input: SnapshotInputBase & { quote: Quo
 
 export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice: Invoice; payments: Array<{ invoiceId: string; amountMinor: number }> }): DocumentRenderSnapshot {
   const { invoice, template, templateVersion, payments, capturedAt, client, businessSettings } = input;
-  const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);
+  const totals = calculateDocumentTotals(
+    invoice.items,
+    invoice.documentDiscountPercent,
+    invoice.adjustmentMinor ?? 0,
+  );
   const paymentSummary = deriveInvoicePaymentSummary(invoice, payments, capturedAt);
   const templateConfig = {
     ...templateVersion.config,
@@ -121,7 +125,7 @@ export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice:
       paidMinor: paymentSummary.paidMinor,
       outstandingMinor: paymentSummary.outstandingMinor,
       notes: invoice.notes,
-      paymentTerms: invoice.paymentTerms,
+      paymentTerms: invoice.termsAndConditions ?? invoice.paymentTerms,
       clientName: client?.name ?? invoice.clientId,
       clientContactName: client?.contactName,
       clientEmail: client?.email,
