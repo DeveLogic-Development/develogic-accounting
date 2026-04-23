@@ -111,6 +111,9 @@ export function QuoteDetailPage() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [moreMenuStyle, setMoreMenuStyle] = useState<CSSProperties | null>(null);
   const [showConversionPreferences, setShowConversionPreferences] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  );
   const [conversionPrefsDraft, setConversionPrefsDraft] = useState<QuoteConversionPreferences>({
     carryCustomerNotes: true,
     carryTermsAndConditions: true,
@@ -132,6 +135,15 @@ export function QuoteDetailPage() {
       },
     );
   }, [quote]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobileViewport(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     if (!showMoreMenu) return;
@@ -681,7 +693,16 @@ export function QuoteDetailPage() {
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                <TemplatePreviewRenderer config={previewConfig} payload={previewPayload} />
+                {isMobileViewport ? (
+                  <div className="dl-preview-pane dl-mobile-preview-fallback" style={{ minHeight: 180, padding: 14 }}>
+                    <div style={{ display: 'grid', gap: 8, textAlign: 'center' }}>
+                      <strong>Inline PDF preview is limited on mobile browsers.</strong>
+                      <span>Use Open Latest PDF or Download Latest PDF to preview this quote.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <TemplatePreviewRenderer config={previewConfig} payload={previewPayload} />
+                )}
                 <div className="dl-inline-actions">
                   <Button size="sm" variant="secondary" onClick={handleGenerateDraftPdf} disabled={isGeneratingPdf}>
                     {isGeneratingPdf ? 'Generating...' : 'Generate Draft PDF'}

@@ -41,6 +41,18 @@ export function PdfArchivePage() {
   const [sort, setSort] = useState<'generated_desc' | 'generated_asc'>('generated_desc');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobileViewport(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   const filtered = useMemo(
     () => {
@@ -242,13 +254,22 @@ export function PdfArchivePage() {
               }
             >
               <div style={{ display: 'grid', gap: 10 }}>
-                <div className="dl-preview-pane" style={{ minHeight: 260, padding: 10 }}>
-                  <iframe
-                    title={`PDF preview ${selectedRow.documentNumber}`}
-                    src={selectedRecord.file.dataUrl}
-                    style={{ width: '100%', height: 320, border: 0, borderRadius: 8, background: '#ffffff' }}
-                  />
-                </div>
+                {isMobileViewport ? (
+                  <div className="dl-preview-pane dl-mobile-preview-fallback" style={{ minHeight: 180, padding: 14 }}>
+                    <div style={{ display: 'grid', gap: 8, textAlign: 'center' }}>
+                      <strong>Inline PDF preview is limited on mobile browsers.</strong>
+                      <span>Use Open PDF or Download PDF to view this archive file.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="dl-preview-pane" style={{ minHeight: 260, padding: 10 }}>
+                    <iframe
+                      title={`PDF preview ${selectedRow.documentNumber}`}
+                      src={selectedRecord.file.dataUrl}
+                      style={{ width: '100%', height: 320, border: 0, borderRadius: 8, background: '#ffffff' }}
+                    />
+                  </div>
+                )}
                 <div style={{ display: 'grid', gap: 8, fontSize: 14 }}>
                   <div>
                     <strong>Document:</strong> {selectedRow.documentNumber}

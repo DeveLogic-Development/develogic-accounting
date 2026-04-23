@@ -8,7 +8,7 @@ import { canUseSupabaseRuntimeState, loadRuntimeState, saveRuntimeState } from '
 import { useMasterDataContext } from '@/modules/master-data/state/MasterDataContext';
 import { createPdfArchiveSeedState } from '../data/seed';
 import { LocalStoragePdfArchiveRepository } from '../data/localStorageRepository';
-import { blobToDataUrl, buildPdfFileMetadata, computeBlobChecksum } from '../domain/file';
+import { blobToDataUrl, buildPdfFileMetadata, computeBlobChecksum, dataUrlToBlob } from '../domain/file';
 import { mapInvoiceToRenderSnapshot, mapQuoteToRenderSnapshot, mapTemplateContextForArchive } from '../domain/mappers';
 import { canRegenerateWithoutOverwrite, evaluatePdfGenerationPolicy, getNextPdfRevision, selectLatestPdfRecord } from '../domain/rules';
 import {
@@ -406,24 +406,48 @@ export function PdfArchiveProvider({ children }: { children: ReactNode }) {
       const record = state.records.find((entry) => entry.id === recordId);
       if (!record) return { ok: false, error: 'PDF record not found.' };
       if (typeof document === 'undefined') return { ok: false, error: 'Download is unavailable in this environment.' };
+      if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+        return { ok: false, error: 'Download is unavailable on this device.' };
+      }
 
-      const anchor = document.createElement('a');
-      anchor.href = record.file.dataUrl;
-      anchor.download = record.file.fileName;
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-
-      return { ok: true };
+      try {
+        const blob = dataUrlToBlob(record.file.dataUrl);
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = record.file.fileName;
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+        return { ok: true };
+      } catch {
+        return { ok: false, error: 'Failed to prepare PDF download.' };
+      }
     },
     openPdfRecord: (recordId) => {
       const record = state.records.find((entry) => entry.id === recordId);
       if (!record) return { ok: false, error: 'PDF record not found.' };
       if (typeof window === 'undefined') return { ok: false, error: 'Open is unavailable in this environment.' };
+      if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+        return { ok: false, error: 'Open is unavailable on this device.' };
+      }
 
-      window.open(record.file.dataUrl, '_blank', 'noopener,noreferrer');
-      return { ok: true };
+      try {
+        const blob = dataUrlToBlob(record.file.dataUrl);
+        const objectUrl = URL.createObjectURL(blob);
+        const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          URL.revokeObjectURL(objectUrl);
+          return { ok: false, error: 'Popup blocked. Allow popups to open the PDF.' };
+        }
+
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+        return { ok: true };
+      } catch {
+        return { ok: false, error: 'Failed to open PDF.' };
+      }
     },
   };
 

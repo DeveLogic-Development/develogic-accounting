@@ -1121,6 +1121,13 @@ textarea {
   color: var(--text-muted);
 }
 
+.dl-mobile-preview-fallback {
+  align-items: center;
+  justify-items: center;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, #ffffff 86%, var(--color-brand-50));
+}
+
 .dl-modal-backdrop {
   position: fixed;
   inset: 0;

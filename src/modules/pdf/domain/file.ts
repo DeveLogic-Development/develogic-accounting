@@ -78,3 +78,24 @@ export async function computeBlobChecksum(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
   return computeDeterministicChecksum(new Uint8Array(buffer));
 }
+
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, payload] = dataUrl.split(',', 2);
+  if (!header || !payload || !header.startsWith('data:')) {
+    throw new Error('Invalid data URL payload.');
+  }
+
+  const mimeType = header.match(/^data:([^;]+)/)?.[1] ?? 'application/octet-stream';
+  const isBase64 = header.includes(';base64');
+
+  if (isBase64) {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
+}

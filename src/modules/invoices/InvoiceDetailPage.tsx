@@ -127,6 +127,9 @@ export function InvoiceDetailPage() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [moreMenuStyle, setMoreMenuStyle] = useState<CSSProperties | null>(null);
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  );
   const [preferencesDraft, setPreferencesDraft] = useState<InvoicePreferencesDraft>({
     discountMode: 'line',
     roundingMode: 'none',
@@ -137,6 +140,15 @@ export function InvoiceDetailPage() {
   const moreMenuPopoverRef = useRef<HTMLDivElement | null>(null);
 
   const invoice = invoiceId ? getInvoiceById(invoiceId) : undefined;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobileViewport(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     if (!showMoreMenu) return;
@@ -720,7 +732,16 @@ export function InvoiceDetailPage() {
           >
             {viewMode === 'pdf' ? (
               <div style={{ display: 'grid', gap: 12 }}>
-                <TemplatePreviewRenderer config={previewConfig} payload={previewPayload} />
+                {isMobileViewport ? (
+                  <div className="dl-preview-pane dl-mobile-preview-fallback" style={{ minHeight: 180, padding: 14 }}>
+                    <div style={{ display: 'grid', gap: 8, textAlign: 'center' }}>
+                      <strong>Inline PDF preview is limited on mobile browsers.</strong>
+                      <span>Use Open Latest PDF or Download Latest PDF to preview this invoice.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <TemplatePreviewRenderer config={previewConfig} payload={previewPayload} />
+                )}
                 <div className="dl-inline-actions">
                   <Button size="sm" variant="secondary" onClick={handleGenerateDraftPdf} disabled={isGeneratingPdf}>
                     {isGeneratingPdf ? 'Generating...' : 'Generate Draft PDF'}
