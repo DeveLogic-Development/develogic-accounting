@@ -470,7 +470,7 @@ export function QuoteDetailPage() {
   };
 
   return (
-    <>
+    <div className="dl-quote-detail-page dl-document-detail-page">
       <PageHeader
         title={quote.quoteNumber}
         subtitle={`${client?.displayName ?? 'Unknown customer'} · Quote Date ${formatDate(quote.issueDate)}`}
@@ -587,7 +587,7 @@ export function QuoteDetailPage() {
         </InlineNotice>
       ) : null}
 
-      <div style={{ marginBottom: 12 }}>
+      <div className="dl-document-tabs-wrap">
         <Tabs tabs={DETAIL_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as DetailTab)} />
       </div>
 
@@ -704,7 +704,7 @@ export function QuoteDetailPage() {
                 <div style={{ display: 'grid', gap: 10 }}>
                   {recentEmailLogs.map((entry) => (
                     <div key={entry.id} style={{ borderBottom: '1px solid var(--border-default)', paddingBottom: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div className="dl-responsive-split-row">
                         <strong>{entry.recipient.to}</strong>
                         <EmailStatusBadge status={entry.status} />
                       </div>
@@ -819,7 +819,7 @@ export function QuoteDetailPage() {
             <div className="dl-card-list">
               {(quote.attachments ?? []).map((attachment) => (
                 <div key={attachment.id} className="dl-card-list-item">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <div className="dl-responsive-split-row">
                     <div>
                       <strong>{attachment.fileName}</strong>
                       <div className="dl-muted" style={{ fontSize: 12 }}>
@@ -846,7 +846,7 @@ export function QuoteDetailPage() {
           onConvert={handleConvert}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 

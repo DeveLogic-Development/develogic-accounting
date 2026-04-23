@@ -17,6 +17,7 @@ import { useTemplates } from './hooks/useTemplates';
 import { DocumentTemplateType, TemplateConfig, TemplatePresetReference } from './domain/types';
 
 type EditorSection = 'branding' | 'layout' | 'visibility' | 'table' | 'summary' | 'footer';
+type MobileEditorPanel = 'setup' | 'preview' | 'properties';
 
 function cloneConfig(config: TemplateConfig): TemplateConfig {
   return JSON.parse(JSON.stringify(config)) as TemplateConfig;
@@ -53,6 +54,17 @@ export function TemplateEditorPage() {
   const [logoUrlInput, setLogoUrlInput] = useState('');
   const [logoNameInput, setLogoNameInput] = useState('Uploaded Logo');
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileEditorPanel, setMobileEditorPanel] = useState<MobileEditorPanel>('preview');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 1023px)');
+    const apply = () => setIsMobileViewport(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
 
   useEffect(() => {
     if (isCreateMode) {
@@ -266,8 +278,163 @@ export function TemplateEditorPage() {
     reader.readAsDataURL(file);
   };
 
-  return (
+  const setupPanel = (
     <>
+      <h3 style={{ marginTop: 0 }}>Template Setup</h3>
+      {isCreateMode ? (
+        <Select
+          label="Starter Preset"
+          value={presetId}
+          onChange={(event) => setPresetId(event.target.value)}
+          options={[
+            { label: 'Blank Custom', value: 'blank_custom' },
+            ...TEMPLATE_PRESETS.map((preset) => ({ label: preset.name, value: preset.id })),
+          ]}
+          disabled={!editable}
+        />
+      ) : null}
+      <Input
+        label="Template Name"
+        value={templateName}
+        onChange={(event) => setTemplateName(event.target.value)}
+        disabled={!editable}
+      />
+      <Textarea
+        label="Description"
+        value={templateDescription}
+        onChange={(event) => setTemplateDescription(event.target.value)}
+        disabled={!editable}
+      />
+      <Select
+        label="Template Type"
+        value={templateType}
+        onChange={(event) => setTemplateType(event.target.value as DocumentTemplateType)}
+        options={[
+          { label: 'Quote', value: 'quote' },
+          { label: 'Invoice', value: 'invoice' },
+          { label: 'Universal', value: 'universal' },
+        ]}
+        disabled={!editable || !isCreateMode}
+      />
+      <Input
+        label="Version Note"
+        value={changeNote}
+        onChange={(event) => setChangeNote(event.target.value)}
+        placeholder="Optional change note for this version"
+        disabled={!editable}
+      />
+
+      <div className="dl-divider" />
+      <h3>Blocks</h3>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {[
+          ['branding', 'Branding'],
+          ['layout', 'Layout'],
+          ['visibility', 'Visibility'],
+          ['table', 'Table'],
+          ['summary', 'Summary'],
+          ['footer', 'Footer'],
+        ].map(([section, label]) => (
+          <Button
+            key={section}
+            size="sm"
+            variant={selectedSection === section ? 'primary' : 'secondary'}
+            onClick={() => {
+              setSelectedSection(section as EditorSection);
+              if (isMobileViewport) {
+                setMobileEditorPanel('properties');
+              }
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      <div className="dl-divider" />
+      <h3>Section Visibility</h3>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {Object.entries(config.sections).map(([key, section]) => (
+          <Toggle
+            key={key}
+            id={`section_${key}`}
+            label={section.title}
+            checked={section.enabled}
+            disabled={!editable || key === 'lineItems'}
+            onChange={(event) =>
+              setConfig((previous) => ({
+                ...previous,
+                sections: {
+                  ...previous.sections,
+                  [key]: {
+                    ...previous.sections[key as keyof TemplateConfig['sections']],
+                    enabled: event.target.checked,
+                  },
+                },
+              }))
+            }
+          />
+        ))}
+      </div>
+    </>
+  );
+
+  const previewPanel = (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}>
+        <strong>Live Preview</strong>
+        <span className="dl-muted" style={{ fontSize: 12 }}>
+          {isCreateMode
+            ? 'Draft template'
+            : `Published v${snapshot?.publishedVersion?.versionNumber ?? 'N/A'} · Draft v${snapshot?.draftVersion?.versionNumber ?? 'N/A'}`}
+        </span>
+      </div>
+      <TemplatePreviewRenderer config={config} payload={previewPayload} />
+    </>
+  );
+
+  const propertiesPanel = (
+    <>
+      <h3 style={{ marginTop: 0 }}>Properties</h3>
+      {selectedSection === 'branding' ? (
+        <BrandingPanel
+          config={config}
+          editable={editable}
+          logoAssets={state.logoAssets}
+          logoNameInput={logoNameInput}
+          logoUrlInput={logoUrlInput}
+          setLogoNameInput={setLogoNameInput}
+          setLogoUrlInput={setLogoUrlInput}
+          onConfigChange={setConfig}
+          onLogoUrlSave={handleLogoUrlSave}
+          onFileUpload={handleFileUpload}
+        />
+      ) : null}
+
+      {selectedSection === 'layout' ? (
+        <LayoutPanel config={config} editable={editable} onConfigChange={setConfig} />
+      ) : null}
+
+      {selectedSection === 'visibility' ? (
+        <VisibilityPanel config={config} editable={editable} onConfigChange={setConfig} />
+      ) : null}
+
+      {selectedSection === 'table' ? (
+        <TablePanel config={config} editable={editable} onConfigChange={setConfig} />
+      ) : null}
+
+      {selectedSection === 'summary' ? (
+        <SummaryPanel config={config} editable={editable} onConfigChange={setConfig} />
+      ) : null}
+
+      {selectedSection === 'footer' ? (
+        <FooterPanel config={config} editable={editable} onConfigChange={setConfig} />
+      ) : null}
+    </>
+  );
+
+  return (
+    <section className="dl-template-editor-page">
       <PageHeader
         title={`${templateName} Editor`}
         subtitle="Configure structured template blocks, branding controls, and version-safe publishing."
@@ -294,156 +461,39 @@ export function TemplateEditorPage() {
       {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
       {editBlockedReason ? <InlineNotice tone="info">{editBlockedReason}</InlineNotice> : null}
 
-      <TemplateBuilderLayout
-        leftPanel={
-          <>
-            <h3 style={{ marginTop: 0 }}>Template Setup</h3>
-            {isCreateMode ? (
-              <Select
-                label="Starter Preset"
-                value={presetId}
-                onChange={(event) => setPresetId(event.target.value)}
-                options={[
-                  { label: 'Blank Custom', value: 'blank_custom' },
-                  ...TEMPLATE_PRESETS.map((preset) => ({ label: preset.name, value: preset.id })),
-                ]}
-                disabled={!editable}
-              />
-            ) : null}
-            <Input
-              label="Template Name"
-              value={templateName}
-              onChange={(event) => setTemplateName(event.target.value)}
-              disabled={!editable}
-            />
-            <Textarea
-              label="Description"
-              value={templateDescription}
-              onChange={(event) => setTemplateDescription(event.target.value)}
-              disabled={!editable}
-            />
-            <Select
-              label="Template Type"
-              value={templateType}
-              onChange={(event) => setTemplateType(event.target.value as DocumentTemplateType)}
-              options={[
-                { label: 'Quote', value: 'quote' },
-                { label: 'Invoice', value: 'invoice' },
-                { label: 'Universal', value: 'universal' },
-              ]}
-              disabled={!editable || !isCreateMode}
-            />
-            <Input
-              label="Version Note"
-              value={changeNote}
-              onChange={(event) => setChangeNote(event.target.value)}
-              placeholder="Optional change note for this version"
-              disabled={!editable}
-            />
-
-            <div className="dl-divider" />
-            <h3>Blocks</h3>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {[
-                ['branding', 'Branding'],
-                ['layout', 'Layout'],
-                ['visibility', 'Visibility'],
-                ['table', 'Table'],
-                ['summary', 'Summary'],
-                ['footer', 'Footer'],
-              ].map(([section, label]) => (
-                <Button
-                  key={section}
-                  size="sm"
-                  variant={selectedSection === section ? 'primary' : 'secondary'}
-                  onClick={() => setSelectedSection(section as EditorSection)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-
-            <div className="dl-divider" />
-            <h3>Section Visibility</h3>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {Object.entries(config.sections).map(([key, section]) => (
-                <Toggle
-                  key={key}
-                  id={`section_${key}`}
-                  label={section.title}
-                  checked={section.enabled}
-                  disabled={!editable || key === 'lineItems'}
-                  onChange={(event) =>
-                    setConfig((previous) => ({
-                      ...previous,
-                      sections: {
-                        ...previous.sections,
-                        [key]: {
-                          ...previous.sections[key as keyof TemplateConfig['sections']],
-                          enabled: event.target.checked,
-                        },
-                      },
-                    }))
-                  }
-                />
-              ))}
-            </div>
-          </>
-        }
-        preview={
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}>
-              <strong>Live Preview</strong>
-              <span className="dl-muted" style={{ fontSize: 12 }}>
-                {isCreateMode
-                  ? 'Draft template'
-                  : `Published v${snapshot?.publishedVersion?.versionNumber ?? 'N/A'} · Draft v${snapshot?.draftVersion?.versionNumber ?? 'N/A'}`}
-              </span>
-            </div>
-            <TemplatePreviewRenderer config={config} payload={previewPayload} />
-          </>
-        }
-        rightPanel={
-          <>
-            <h3 style={{ marginTop: 0 }}>Properties</h3>
-            {selectedSection === 'branding' ? (
-              <BrandingPanel
-                config={config}
-                editable={editable}
-                logoAssets={state.logoAssets}
-                logoNameInput={logoNameInput}
-                logoUrlInput={logoUrlInput}
-                setLogoNameInput={setLogoNameInput}
-                setLogoUrlInput={setLogoUrlInput}
-                onConfigChange={setConfig}
-                onLogoUrlSave={handleLogoUrlSave}
-                onFileUpload={handleFileUpload}
-              />
-            ) : null}
-
-            {selectedSection === 'layout' ? (
-              <LayoutPanel config={config} editable={editable} onConfigChange={setConfig} />
-            ) : null}
-
-            {selectedSection === 'visibility' ? (
-              <VisibilityPanel config={config} editable={editable} onConfigChange={setConfig} />
-            ) : null}
-
-            {selectedSection === 'table' ? (
-              <TablePanel config={config} editable={editable} onConfigChange={setConfig} />
-            ) : null}
-
-            {selectedSection === 'summary' ? (
-              <SummaryPanel config={config} editable={editable} onConfigChange={setConfig} />
-            ) : null}
-
-            {selectedSection === 'footer' ? (
-              <FooterPanel config={config} editable={editable} onConfigChange={setConfig} />
-            ) : null}
-          </>
-        }
-      />
-    </>
+      {isMobileViewport ? (
+        <div className="dl-page-stack">
+          <div className="dl-template-editor-mobile-switch" role="tablist" aria-label="Template editor panels">
+            <Button
+              size="sm"
+              variant={mobileEditorPanel === 'setup' ? 'primary' : 'secondary'}
+              onClick={() => setMobileEditorPanel('setup')}
+            >
+              Setup
+            </Button>
+            <Button
+              size="sm"
+              variant={mobileEditorPanel === 'preview' ? 'primary' : 'secondary'}
+              onClick={() => setMobileEditorPanel('preview')}
+            >
+              Preview
+            </Button>
+            <Button
+              size="sm"
+              variant={mobileEditorPanel === 'properties' ? 'primary' : 'secondary'}
+              onClick={() => setMobileEditorPanel('properties')}
+            >
+              Properties
+            </Button>
+          </div>
+          {mobileEditorPanel === 'setup' ? <Card>{setupPanel}</Card> : null}
+          {mobileEditorPanel === 'preview' ? <Card>{previewPanel}</Card> : null}
+          {mobileEditorPanel === 'properties' ? <Card>{propertiesPanel}</Card> : null}
+        </div>
+      ) : (
+        <TemplateBuilderLayout leftPanel={setupPanel} preview={previewPanel} rightPanel={propertiesPanel} />
+      )}
+    </section>
   );
 }
 

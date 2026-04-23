@@ -573,7 +573,7 @@ export function InvoiceFormPage() {
   const recipientInputValue = (values.recipientEmails ?? []).join(', ');
 
   return (
-    <>
+    <div className="dl-invoice-form-page dl-document-form-page">
       <PageHeader
         title={title}
         subtitle={subtitle}
@@ -639,11 +639,11 @@ export function InvoiceFormPage() {
       ) : null}
       <FormValidationSummary issues={issues} />
 
-      <div style={{ marginBottom: 12 }}>
+      <div className="dl-document-tabs-wrap">
         <Tabs tabs={FORM_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as InvoiceFormTab)} />
       </div>
 
-      <div className="dl-split-layout">
+      <div className="dl-split-layout dl-document-form-layout">
         <div style={{ display: 'grid', gap: 16 }}>
           {(activeTab === 'details' || activeTab === 'items') ? (
             <Card title="Invoice Header" subtitle="Customer, numbering, dates, terms, and receivables context">
@@ -770,7 +770,7 @@ export function InvoiceFormPage() {
                     onChange={(event) => setCatalogSelectionId(event.target.value)}
                     options={catalogOptions}
                     aria-label="Select item from catalog"
-                    style={{ width: 320 }}
+                    style={{ width: 'min(320px, 100%)' }}
                     disabled={!editable}
                   />
                   <Button variant="secondary" onClick={() => addCatalogItem(catalogSelectionId)} disabled={!editable || !catalogSelectionId}>
@@ -876,7 +876,7 @@ export function InvoiceFormPage() {
                 <div className="dl-card-list">
                   {(values.attachments ?? []).map((attachment) => (
                     <div key={attachment.id} className="dl-card-list-item">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <div className="dl-responsive-split-row">
                         <div>
                           <strong>{attachment.fileName}</strong>
                           <div className="dl-muted" style={{ fontSize: 12 }}>
@@ -952,6 +952,6 @@ export function InvoiceFormPage() {
           <Button variant="primary" onClick={handleSaveAndSend}>Save and Send</Button>
         </StickyActionBar>
       ) : null}
-    </>
+    </div>
   );
 }

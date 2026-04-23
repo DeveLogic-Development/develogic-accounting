@@ -443,7 +443,7 @@ export function QuoteFormPage() {
   const recipientInputValue = (values.recipientEmails ?? []).join(', ');
 
   return (
-    <>
+    <div className="dl-quote-form-page dl-document-form-page">
       <PageHeader
         title={title}
         subtitle={subtitle}
@@ -476,11 +476,11 @@ export function QuoteFormPage() {
       {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
       <FormValidationSummary issues={issues} />
 
-      <div style={{ marginBottom: 12 }}>
+      <div className="dl-document-tabs-wrap">
         <Tabs tabs={FORM_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as QuoteFormTab)} />
       </div>
 
-      <div className="dl-split-layout">
+      <div className="dl-split-layout dl-document-form-layout">
         <div style={{ display: 'grid', gap: 16 }}>
           {(activeTab === 'details' || activeTab === 'items') && (
             <Card title="Quote Header" subtitle="Customer, dates, numbering, and sales context">
@@ -598,7 +598,7 @@ export function QuoteFormPage() {
                     onChange={(event) => setCatalogSelectionId(event.target.value)}
                     options={catalogOptions}
                     aria-label="Select catalog item"
-                    style={{ width: 320 }}
+                    style={{ width: 'min(320px, 100%)' }}
                     disabled={!editable}
                   />
                   <Button
@@ -701,7 +701,7 @@ export function QuoteFormPage() {
                 <div className="dl-card-list">
                   {(values.attachments ?? []).map((attachment) => (
                     <div key={attachment.id} className="dl-card-list-item">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <div className="dl-responsive-split-row">
                         <div>
                           <strong>{attachment.fileName}</strong>
                           <div className="dl-muted" style={{ fontSize: 12 }}>
@@ -760,6 +760,6 @@ export function QuoteFormPage() {
           </Button>
         </StickyActionBar>
       ) : null}
-    </>
+    </div>
   );
 }

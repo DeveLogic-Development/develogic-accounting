@@ -21,10 +21,38 @@ type SegmentFilter = 'all' | 'with_outstanding' | 'high_outstanding';
 type StatusFilter = 'all' | 'active' | 'inactive';
 type TypeFilter = 'all' | 'business' | 'individual';
 type SortFilter = 'recent' | 'outstanding_desc' | 'name_asc';
+type SelectOption = { label: string; value: string };
+
+const CUSTOMER_TYPE_OPTIONS: SelectOption[] = [
+  { label: 'All Types', value: 'all' },
+  { label: 'Business', value: 'business' },
+  { label: 'Individual', value: 'individual' },
+];
+
+const SEGMENT_OPTIONS: SelectOption[] = [
+  { label: 'All Segments', value: 'all' },
+  { label: 'With Outstanding', value: 'with_outstanding' },
+  { label: 'Outstanding >= R10,000', value: 'high_outstanding' },
+];
+
+const STATUS_OPTIONS: SelectOption[] = [
+  { label: 'All Statuses', value: 'all' },
+  { label: 'Active', value: 'active' },
+  { label: 'Inactive', value: 'inactive' },
+];
+
+const SORT_OPTIONS: SelectOption[] = [
+  { label: 'Sort: Recent Activity', value: 'recent' },
+  { label: 'Sort: Outstanding High', value: 'outstanding_desc' },
+  { label: 'Sort: Name A-Z', value: 'name_asc' },
+];
 
 export function ClientsListPage() {
   const { clients, loading, deleteClient } = useMasterData();
   const { invoiceSummaries, state } = useAccounting();
+  const [mobileFiltersEnabled, setMobileFiltersEnabled] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  );
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [segment, setSegment] = useState<SegmentFilter>('all');
@@ -32,6 +60,15 @@ export function ClientsListPage() {
   const [sort, setSort] = useState<SortFilter>('recent');
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const apply = () => setMobileFiltersEnabled(media.matches);
+
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
 
   const filtered = useMemo(() => {
     const metricsByClient = new Map<
@@ -146,50 +183,70 @@ export function ClientsListPage() {
           onChange={(event) => setSearch(event.target.value)}
           style={{ width: 'min(360px, 100%)' }}
         />
-        <Select
-          aria-label="Customer type filter"
-          value={customerType}
-          onChange={(event) => setCustomerType(event.target.value as TypeFilter)}
-          options={[
-            { label: 'All Types', value: 'all' },
-            { label: 'Business', value: 'business' },
-            { label: 'Individual', value: 'individual' },
-          ]}
-          style={{ width: 180 }}
-        />
-        <Select
-          aria-label="Customer segment filter"
-          value={segment}
-          onChange={(event) => setSegment(event.target.value as SegmentFilter)}
-          options={[
-            { label: 'All Segments', value: 'all' },
-            { label: 'With Outstanding', value: 'with_outstanding' },
-            { label: 'Outstanding >= R10,000', value: 'high_outstanding' },
-          ]}
-          style={{ width: 230 }}
-        />
-        <Select
-          aria-label="Customer status filter"
-          value={status}
-          onChange={(event) => setStatus(event.target.value as StatusFilter)}
-          options={[
-            { label: 'All Statuses', value: 'all' },
-            { label: 'Active', value: 'active' },
-            { label: 'Inactive', value: 'inactive' },
-          ]}
-          style={{ width: 170 }}
-        />
-        <Select
-          aria-label="Sort customers"
-          value={sort}
-          onChange={(event) => setSort(event.target.value as SortFilter)}
-          options={[
-            { label: 'Sort: Recent Activity', value: 'recent' },
-            { label: 'Sort: Outstanding High', value: 'outstanding_desc' },
-            { label: 'Sort: Name A-Z', value: 'name_asc' },
-          ]}
-          style={{ width: 210 }}
-        />
+        {mobileFiltersEnabled ? (
+          <MobileFilterSelect
+            ariaLabel="Customer type filter"
+            value={customerType}
+            options={CUSTOMER_TYPE_OPTIONS}
+            onChange={(next) => setCustomerType(next as TypeFilter)}
+          />
+        ) : (
+          <Select
+            aria-label="Customer type filter"
+            value={customerType}
+            onChange={(event) => setCustomerType(event.target.value as TypeFilter)}
+            options={CUSTOMER_TYPE_OPTIONS}
+            style={{ width: 180 }}
+          />
+        )}
+        {mobileFiltersEnabled ? (
+          <MobileFilterSelect
+            ariaLabel="Customer segment filter"
+            value={segment}
+            options={SEGMENT_OPTIONS}
+            onChange={(next) => setSegment(next as SegmentFilter)}
+          />
+        ) : (
+          <Select
+            aria-label="Customer segment filter"
+            value={segment}
+            onChange={(event) => setSegment(event.target.value as SegmentFilter)}
+            options={SEGMENT_OPTIONS}
+            style={{ width: 230 }}
+          />
+        )}
+        {mobileFiltersEnabled ? (
+          <MobileFilterSelect
+            ariaLabel="Customer status filter"
+            value={status}
+            options={STATUS_OPTIONS}
+            onChange={(next) => setStatus(next as StatusFilter)}
+          />
+        ) : (
+          <Select
+            aria-label="Customer status filter"
+            value={status}
+            onChange={(event) => setStatus(event.target.value as StatusFilter)}
+            options={STATUS_OPTIONS}
+            style={{ width: 170 }}
+          />
+        )}
+        {mobileFiltersEnabled ? (
+          <MobileFilterSelect
+            ariaLabel="Sort customers"
+            value={sort}
+            options={SORT_OPTIONS}
+            onChange={(next) => setSort(next as SortFilter)}
+          />
+        ) : (
+          <Select
+            aria-label="Sort customers"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as SortFilter)}
+            options={SORT_OPTIONS}
+            style={{ width: 210 }}
+          />
+        )}
       </FilterBar>
 
       {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
@@ -312,6 +369,123 @@ export function ClientsListPage() {
         </>
       )}
     </>
+  );
+}
+
+interface MobileFilterSelectProps {
+  ariaLabel: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (nextValue: string) => void;
+}
+
+function MobileFilterSelect({ ariaLabel, value, options, onChange }: MobileFilterSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? options[0]?.label ?? '';
+
+  const updatePopoverPosition = () => {
+    if (!triggerRef.current) return;
+
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const viewportPadding = 10;
+    const width = Math.max(240, Math.min(window.innerWidth - viewportPadding * 2, triggerRect.width));
+    const itemHeight = 52;
+    const menuHeight = Math.min(360, Math.max(72, options.length * itemHeight + 12));
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const shouldOpenUp = spaceBelow < menuHeight + viewportPadding;
+
+    const top = shouldOpenUp
+      ? Math.max(viewportPadding, triggerRect.top - menuHeight - 8)
+      : Math.min(window.innerHeight - menuHeight - viewportPadding, triggerRect.bottom + 8);
+    const left = Math.max(
+      viewportPadding,
+      Math.min(window.innerWidth - width - viewportPadding, triggerRect.left),
+    );
+
+    setPopoverStyle({
+      position: 'fixed',
+      top,
+      left,
+      width,
+      maxHeight: menuHeight,
+      zIndex: 220,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    const handleViewportChange = () => updatePopoverPosition();
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [open, options.length]);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div className="dl-mobile-filter-select">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="dl-mobile-filter-select-trigger"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((previous) => !previous)}
+      >
+        <span>{selectedLabel}</span>
+        <span aria-hidden>⌄</span>
+      </button>
+      {open && popoverStyle
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className="dl-mobile-filter-select-popover"
+              role="listbox"
+              aria-label={ariaLabel}
+              style={popoverStyle}
+            >
+              {options.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="dl-mobile-filter-select-option"
+                  role="option"
+                  aria-selected={option.value === value}
+                  onClick={() => handleSelect(option.value)}
+                >
+                  <span aria-hidden>{option.value === value ? '✓' : ''}</span>
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
   );
 }
 

@@ -138,7 +138,7 @@ export function RecurringInvoicesPage() {
   };
 
   return (
-    <>
+    <div className="dl-recurring-invoices-page">
       <PageHeader
         title="Recurring Invoices"
         subtitle={`${activeCount} active · ${draftCount} draft profile(s)`}
@@ -289,6 +289,6 @@ export function RecurringInvoicesPage() {
           )}
         </Card>
       </div>
-    </>
+    </div>
   );
 }

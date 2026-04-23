@@ -1,5 +1,6 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { mobileNav, sidebarNav } from '@/app/navigation';
+import { mobileMoreNav, mobileNav, sidebarNav } from '@/app/navigation';
 import { IconButton } from '@/design-system/primitives/IconButton';
 import { Input } from '@/design-system/primitives/Input';
 import { Button } from '@/design-system/primitives/Button';
@@ -23,11 +24,49 @@ function toTitleCase(value: string): string {
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+function matchesNavPath(currentPath: string, navPath: string): boolean {
+  if (currentPath === navPath) return true;
+  return currentPath.startsWith(`${navPath}/`);
+}
+
 export function AppLayout() {
   const location = useLocation();
   const businessSettings = useBusinessSettings();
   const { userEmail, signOut } = useAuth();
   const crumbs = breadcrumbsFromPath(location.pathname);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const mobileMoreRef = useRef<HTMLDivElement | null>(null);
+
+  const mobileMoreIsActive = useMemo(
+    () => mobileMoreNav.some((item) => matchesNavPath(location.pathname, item.to)),
+    [location.pathname],
+  );
+
+  useEffect(() => {
+    setMobileMoreOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileMoreOpen) return;
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (mobileMoreRef.current?.contains(target)) return;
+      setMobileMoreOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMoreOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [mobileMoreOpen]);
 
   const renderSidebarItem = (item: NavItem, isSubItem = false) => (
     <div key={item.to}>
@@ -100,14 +139,61 @@ export function AppLayout() {
         </main>
       </div>
 
-      <nav className="dl-bottom-nav" aria-label="Mobile navigation">
-        {mobileNav.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
-            <span aria-hidden>{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
-      </nav>
+      <div className="dl-bottom-nav-wrap" ref={mobileMoreRef}>
+        {mobileMoreOpen ? (
+          <button
+            type="button"
+            className="dl-bottom-more-backdrop"
+            aria-label="Close more navigation menu"
+            onClick={() => setMobileMoreOpen(false)}
+          />
+        ) : null}
+        {mobileMoreOpen ? (
+          <div className="dl-bottom-more-panel" role="menu" aria-label="More navigation">
+            <div className="dl-bottom-more-panel-header">
+              <strong>More</strong>
+              <button
+                type="button"
+                className="dl-bottom-more-close"
+                onClick={() => setMobileMoreOpen(false)}
+                aria-label="Close more navigation menu"
+              >
+                ✕
+              </button>
+            </div>
+            {mobileMoreNav.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `dl-bottom-more-link ${isActive ? 'active' : ''}`}
+                role="menuitem"
+              >
+                <span aria-hidden>{item.icon}</span>
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+        ) : null}
+        <nav className="dl-bottom-nav" aria-label="Mobile navigation">
+          {mobileNav.map((item) => (
+            <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+              <span aria-hidden>{item.icon}</span>
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            className={mobileMoreIsActive || mobileMoreOpen ? 'active' : ''}
+            aria-haspopup="menu"
+            aria-expanded={mobileMoreOpen}
+            aria-label="Open more navigation"
+            onClick={() => setMobileMoreOpen((previous) => !previous)}
+          >
+            <span aria-hidden>⋯</span>
+            <span>More</span>
+          </button>
+        </nav>
+      </div>
       <ToastViewport />
     </div>
   );

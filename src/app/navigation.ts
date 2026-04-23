@@ -47,10 +47,19 @@ export const sidebarNav: NavGroup[] = [
 
 export const mobileNav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: '▦' },
-  { to: '/reports', label: 'Reports', icon: '◷' },
   { to: '/clients', label: 'Clients', icon: '◎' },
-  { to: '/items', label: 'Items', icon: '◫' },
   { to: '/quotes', label: 'Quotes', icon: '✦' },
   { to: '/invoices', label: 'Invoices', icon: '◩' },
-  { to: '/templates', label: 'Templates', icon: '⋯' },
+];
+
+export const mobileMoreNav: NavItem[] = [
+  { to: '/items', label: 'Items', icon: '◫' },
+  { to: '/reports', label: 'Reports', icon: '◷' },
+  { to: '/invoices/recurring', label: 'Recurring Invoices', icon: '↻' },
+  { to: '/templates', label: 'Templates', icon: '◧' },
+  { to: '/notifications', label: 'Notifications', icon: '🔔' },
+  { to: '/emails/history', label: 'Email History', icon: '✉' },
+  { to: '/pdf-archive', label: 'PDF Archive', icon: '⬒' },
+  { to: '/settings/business', label: 'Business Settings', icon: '◰' },
+  { to: '/settings/tax', label: 'Tax & Numbering', icon: '⚙️' },
 ];

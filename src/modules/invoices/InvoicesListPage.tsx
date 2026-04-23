@@ -165,7 +165,7 @@ export function InvoicesListPage() {
   };
 
   return (
-    <>
+    <div className="dl-invoices-list-page">
       <PageHeader
         title="Invoices"
         subtitle={`Overdue: ${overdueCount} · Outstanding: ${formatMinorCurrency(outstandingTotalMinor)}`}
@@ -428,7 +428,7 @@ export function InvoicesListPage() {
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
 

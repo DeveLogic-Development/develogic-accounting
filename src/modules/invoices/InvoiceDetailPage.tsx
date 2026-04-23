@@ -9,7 +9,6 @@ import { EmailStatusBadge, InvoiceStatusBadge } from '@/design-system/patterns/S
 import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { Tabs } from '@/design-system/primitives/Tabs';
 import { Textarea } from '@/design-system/primitives/Textarea';
-import { IconButton } from '@/design-system/primitives/IconButton';
 import { formatBytes, formatDate, formatMinorCurrency } from '@/utils/format';
 import { useAccounting } from '@/modules/accounting/hooks/useAccounting';
 import { useTemplates } from '@/modules/templates/hooks/useTemplates';
@@ -542,7 +541,7 @@ export function InvoiceDetailPage() {
   };
 
   return (
-    <>
+    <div className="dl-invoice-detail-page dl-document-detail-page">
       <PageHeader
         title={invoice.invoiceNumber}
         subtitle={`${client?.displayName ?? 'Unknown customer'} · Invoice Date ${formatDate(invoice.issueDate)}`}
@@ -575,7 +574,7 @@ export function InvoiceDetailPage() {
               </Button>
             ) : null}
             <div className="dl-row-action-menu" ref={moreMenuRootRef}>
-              <Button type="button" variant="ghost" onClick={() => setShowMoreMenu((previous) => !previous)}>
+              <Button type="button" variant="secondary" onClick={() => setShowMoreMenu((previous) => !previous)}>
                 More
               </Button>
               {showMoreMenu && moreMenuStyle
@@ -640,7 +639,9 @@ export function InvoiceDetailPage() {
                   )
                 : null}
             </div>
-            <IconButton icon="📎" label="Open attachments" onClick={() => setAttachmentsOpen((previous) => !previous)} />
+            <Button type="button" variant="secondary" onClick={() => setAttachmentsOpen((previous) => !previous)}>
+              Attachments
+            </Button>
           </>
         }
       />
@@ -678,7 +679,7 @@ export function InvoiceDetailPage() {
         <InlineNotice tone="warning">This invoice has been voided and can no longer accept payments.</InlineNotice>
       ) : null}
 
-      <div style={{ marginBottom: 12 }}>
+      <div className="dl-document-tabs-wrap">
         <Tabs tabs={DETAIL_TABS} activeKey={activeTab} onChange={(key) => setActiveTab(key as DetailTab)} />
       </div>
 
@@ -813,7 +814,7 @@ export function InvoiceDetailPage() {
                 <div style={{ display: 'grid', gap: 10 }}>
                   {recentEmailLogs.map((entry) => (
                     <div key={entry.id} style={{ borderBottom: '1px solid var(--border-default)', paddingBottom: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div className="dl-responsive-split-row">
                         <strong>{entry.recipient.to}</strong>
                         <EmailStatusBadge status={entry.status} />
                       </div>
@@ -855,7 +856,7 @@ export function InvoiceDetailPage() {
                 <div style={{ display: 'grid', gap: 10 }}>
                   {payments.map((payment) => (
                     <div key={payment.id} style={{ borderBottom: '1px solid var(--border-default)', paddingBottom: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div className="dl-responsive-split-row">
                         <strong>{formatMinorCurrency(payment.amountMinor, invoice.currencyCode)}</strong>
                         <span className="dl-muted">{formatDate(payment.paymentDate)}</span>
                       </div>
@@ -942,7 +943,7 @@ export function InvoiceDetailPage() {
             <div className="dl-card-list">
               {(invoice.attachments ?? []).map((attachment) => (
                 <div key={attachment.id} className="dl-card-list-item">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <div className="dl-responsive-split-row">
                     <div>
                       <strong>{attachment.fileName}</strong>
                       <div className="dl-muted" style={{ fontSize: 12 }}>
@@ -968,7 +969,7 @@ export function InvoiceDetailPage() {
           onSave={handleSavePreferences}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 

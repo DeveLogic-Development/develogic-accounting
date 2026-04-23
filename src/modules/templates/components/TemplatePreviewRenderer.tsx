@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { formatDate } from '@/utils/format';
 import { loadBusinessSettings } from '@/modules/settings/domain/business-settings';
 import { mapTemplatePreviewModel } from '../domain/preview';
@@ -14,10 +15,27 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
   const logoUrl = businessSettings.logoDataUrl || config.branding.logoUrl;
   const accentColor = config.branding.accentColor;
   const model = mapTemplatePreviewModel(config, payload);
+  const [isNarrowViewport, setIsNarrowViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 640px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia('(max-width: 640px)');
+    const onChange = () => setIsNarrowViewport(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   return (
     <article
       style={{
+        width: '100%',
+        maxWidth: '100%',
+        overflowX: 'auto',
+        overflowY: 'hidden',
         background: '#ffffff',
         color: '#1f2937',
         border: '1px solid #d8e0e8',
@@ -30,7 +48,8 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
         <header
           style={{
             display: 'grid',
-            gridTemplateColumns: config.layout.headerLayout === 'split' ? '1fr 1fr' : '1fr',
+            gridTemplateColumns:
+              config.layout.headerLayout === 'split' && !isNarrowViewport ? '1fr 1fr' : '1fr',
             gap: 12,
             marginBottom: config.layout.sectionSpacing,
             padding: config.layout.headerLayout === 'banner' ? '12px 14px' : 0,
@@ -43,11 +62,11 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
         >
           <div style={{ textAlign: config.branding.logoPlacement }}>
             {logoUrl ? (
-              <img src={logoUrl} alt="Template Logo" style={{ width: 120, height: 'auto' }} />
+              <img src={logoUrl} alt="Template Logo" style={{ width: isNarrowViewport ? 88 : 120, height: 'auto' }} />
             ) : (
               <div
                 style={{
-                  width: 120,
+                  width: isNarrowViewport ? 88 : 120,
                   height: 34,
                   borderRadius: 8,
                   background: `${primaryColor}20`,
@@ -64,7 +83,7 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
             <div
               style={{
                 marginTop: 10,
-                fontSize: 20,
+                fontSize: isNarrowViewport ? 16 : 20,
                 fontWeight: headingWeight(config.branding.titleEmphasis),
                 color: primaryColor,
               }}
@@ -79,7 +98,7 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
               {model.metadata.map((entry) => (
                 <div key={entry.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                   <span style={{ color: '#6b7280', fontSize: 12 }}>{entry.label}</span>
-                  <strong style={{ fontSize: 12 }}>{entry.value}</strong>
+                  <strong style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{entry.value}</strong>
                 </div>
               ))}
             </div>
@@ -91,7 +110,7 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
         <section
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: isNarrowViewport ? '1fr' : '1fr 1fr',
             gap: 12,
             marginBottom: config.layout.sectionSpacing,
           }}
@@ -131,8 +150,8 @@ export function TemplatePreviewRenderer({ config, payload }: TemplatePreviewRend
       {config.sections.lineItems.enabled ? (
         <section style={{ marginBottom: config.layout.sectionSpacing }}>
           <h4 style={{ margin: 0, marginBottom: 8 }}>{config.sections.lineItems.title}</h4>
-          <div className="dl-line-editor">
-            <table>
+          <div className="dl-line-editor" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+            <table style={{ minWidth: isNarrowViewport ? 520 : 0 }}>
               <thead>
                 <tr>
                   {model.tableColumns.map((column) => (
@@ -266,10 +285,12 @@ function AddressBlock({
         <strong style={{ color: '#111827' }}>{name}</strong>
         {contactName ? <div>{contactName}</div> : null}
         {lines.map((line) => (
-          <div key={`${title}_${line}`}>{line}</div>
+          <div key={`${title}_${line}`} style={{ overflowWrap: 'anywhere' }}>
+            {line}
+          </div>
         ))}
-        {email ? <div>{email}</div> : null}
-        {phone ? <div>{phone}</div> : null}
+        {email ? <div style={{ overflowWrap: 'anywhere' }}>{email}</div> : null}
+        {phone ? <div style={{ overflowWrap: 'anywhere' }}>{phone}</div> : null}
         {registrationNumber ? <div>Reg: {registrationNumber}</div> : null}
         {taxNumber ? <div>Tax: {taxNumber}</div> : null}
       </div>

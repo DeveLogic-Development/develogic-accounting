@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '@/design-system/patterns/PageHeader';
 import { FilterBar } from '@/design-system/patterns/FilterBar';
@@ -13,6 +14,7 @@ import { TemplatePreviewRenderer } from './components/TemplatePreviewRenderer';
 import { createInvoiceTemplatePreviewPayload, createQuoteTemplatePreviewPayload } from './domain/sample-preview';
 import { useTemplates } from './hooks/useTemplates';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
+import { IconButton } from '@/design-system/primitives/IconButton';
 
 export function TemplateLibraryPage() {
   const {
@@ -47,7 +49,7 @@ export function TemplateLibraryPage() {
   const defaultsCount = templateRows.filter((row) => row.isDefaultForInvoice || row.isDefaultForQuote).length;
 
   return (
-    <>
+    <section className="dl-template-library-page">
       <PageHeader
         title="Template Library"
         subtitle={`Published templates: ${publishedCount} · Defaults assigned: ${defaultsCount}`}
@@ -105,7 +107,7 @@ export function TemplateLibraryPage() {
           }
         />
       ) : (
-        <div className="dl-grid cols-3">
+        <div className="dl-template-library-grid">
           {filteredRows.map((row) => {
             const snapshot = getTemplateSnapshot(row.id);
             const previewConfig = snapshot?.editableVersion?.config ?? snapshot?.publishedVersion?.config;
@@ -119,7 +121,7 @@ export function TemplateLibraryPage() {
                 subtitle={`${prettyType(row.type)} template`}
                 rightSlot={<TemplateStatusBadge status={row.status} />}
               >
-                <div style={{ marginBottom: 12 }}>
+                <div className="dl-template-card-preview">
                   {previewConfig ? (
                     <TemplatePreviewRenderer config={previewConfig} payload={previewPayload} />
                   ) : (
@@ -151,95 +153,199 @@ export function TemplateLibraryPage() {
                   <Link to={`/templates/${row.id}/editor`}>
                     <Button size="sm" variant="primary">Edit</Button>
                   </Link>
-                  <Button
-                    size="sm"
-                    type="button"
-                    onClick={() => {
+                  <TemplateCardActionsMenu
+                    templateId={row.id}
+                    templateName={row.name}
+                    canPublish={row.status !== 'published'}
+                    canArchive={row.status === 'published'}
+                    canSetDefaultQuote={
+                      (row.type === 'quote' || row.type === 'universal') && row.status === 'published'
+                    }
+                    canSetDefaultInvoice={
+                      (row.type === 'invoice' || row.type === 'universal') && row.status === 'published'
+                    }
+                    onDuplicate={() => {
                       const result = duplicateTemplate(row.id);
                       setNotice({
                         tone: result.ok ? 'success' : 'error',
                         text: result.ok ? 'Template duplicated.' : result.error ?? 'Unable to duplicate template.',
                       });
                     }}
-                  >
-                    Duplicate
-                  </Button>
-                  {row.status !== 'published' ? (
-                    <Button
-                      size="sm"
-                      type="button"
-                      onClick={() => {
-                        const result = publishTemplate(row.id, 'Published from template library');
-                        setNotice({
-                          tone: result.ok ? 'success' : 'error',
-                          text: result.ok ? 'Template published.' : result.error ?? 'Unable to publish template.',
-                        });
-                      }}
-                    >
-                      Publish
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      type="button"
-                      onClick={() => {
-                        const result = archiveTemplate(row.id);
-                        setNotice({
-                          tone: result.ok ? 'success' : 'error',
-                          text: result.ok ? 'Template archived.' : result.error ?? 'Unable to archive template.',
-                        });
-                      }}
-                    >
-                      Archive
-                    </Button>
-                  )}
-                </div>
-
-                <div className="dl-inline-actions" style={{ marginTop: 8 }}>
-                  {(row.type === 'quote' || row.type === 'universal') && row.status === 'published' ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      onClick={() => {
-                        const result = setDefaultTemplate(row.id, 'quote');
-                        setNotice({
-                          tone: result.ok ? 'success' : 'error',
-                          text: result.ok ? 'Default quote template updated.' : result.error ?? 'Unable to set default.',
-                        });
-                      }}
-                    >
-                      Set Default Quote
-                    </Button>
-                  ) : null}
-                  {(row.type === 'invoice' || row.type === 'universal') && row.status === 'published' ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      onClick={() => {
-                        const result = setDefaultTemplate(row.id, 'invoice');
-                        setNotice({
-                          tone: result.ok ? 'success' : 'error',
-                          text: result.ok
-                            ? 'Default invoice template updated.'
-                            : result.error ?? 'Unable to set default.',
-                        });
-                      }}
-                    >
-                      Set Default Invoice
-                    </Button>
-                  ) : null}
+                    onPublish={() => {
+                      const result = publishTemplate(row.id, 'Published from template library');
+                      setNotice({
+                        tone: result.ok ? 'success' : 'error',
+                        text: result.ok ? 'Template published.' : result.error ?? 'Unable to publish template.',
+                      });
+                    }}
+                    onArchive={() => {
+                      const result = archiveTemplate(row.id);
+                      setNotice({
+                        tone: result.ok ? 'success' : 'error',
+                        text: result.ok ? 'Template archived.' : result.error ?? 'Unable to archive template.',
+                      });
+                    }}
+                    onSetDefaultQuote={() => {
+                      const result = setDefaultTemplate(row.id, 'quote');
+                      setNotice({
+                        tone: result.ok ? 'success' : 'error',
+                        text: result.ok ? 'Default quote template updated.' : result.error ?? 'Unable to set default.',
+                      });
+                    }}
+                    onSetDefaultInvoice={() => {
+                      const result = setDefaultTemplate(row.id, 'invoice');
+                      setNotice({
+                        tone: result.ok ? 'success' : 'error',
+                        text: result.ok
+                          ? 'Default invoice template updated.'
+                          : result.error ?? 'Unable to set default.',
+                      });
+                    }}
+                  />
                 </div>
               </Card>
             );
           })}
         </div>
       )}
-    </>
+    </section>
   );
 }
 
 function prettyType(type: 'quote' | 'invoice' | 'universal'): string {
   return type.replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+interface TemplateCardActionsMenuProps {
+  templateId: string;
+  templateName: string;
+  canPublish: boolean;
+  canArchive: boolean;
+  canSetDefaultQuote: boolean;
+  canSetDefaultInvoice: boolean;
+  onDuplicate: () => void;
+  onPublish: () => void;
+  onArchive: () => void;
+  onSetDefaultQuote: () => void;
+  onSetDefaultInvoice: () => void;
+}
+
+function TemplateCardActionsMenu({
+  templateId,
+  templateName,
+  canPublish,
+  canArchive,
+  canSetDefaultQuote,
+  canSetDefaultInvoice,
+  onDuplicate,
+  onPublish,
+  onArchive,
+  onSetDefaultQuote,
+  onSetDefaultInvoice,
+}: TemplateCardActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  const updatePopoverPosition = () => {
+    if (!rootRef.current) return;
+    const triggerRect = rootRef.current.getBoundingClientRect();
+    const menuWidth = 220;
+    const estimatedMenuHeight = 222;
+    const viewportPadding = 8;
+    const top = Math.min(window.innerHeight - estimatedMenuHeight - viewportPadding, triggerRect.bottom + 6);
+    const left = Math.max(
+      viewportPadding,
+      Math.min(window.innerWidth - menuWidth - viewportPadding, triggerRect.right - menuWidth),
+    );
+    setPopoverStyle({
+      position: 'fixed',
+      top,
+      left,
+      width: menuWidth,
+      zIndex: 120,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updatePopoverPosition();
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const handleViewportChange = () => updatePopoverPosition();
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [open]);
+
+  const closeAndRun = (fn: () => void) => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <div className="dl-row-action-menu" ref={rootRef}>
+      <IconButton
+        icon="⋯"
+        label={`More actions for ${templateName}`}
+        className="dl-row-action-trigger"
+        onClick={() => setOpen((previous) => !previous)}
+      />
+      {open && popoverStyle
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className="dl-row-action-popover"
+              role="menu"
+              aria-label={`Template actions for ${templateName}`}
+              style={popoverStyle}
+            >
+              <button type="button" className="dl-row-action-item" onClick={() => closeAndRun(onDuplicate)}>
+                Duplicate
+              </button>
+              {canPublish ? (
+                <button type="button" className="dl-row-action-item" onClick={() => closeAndRun(onPublish)}>
+                  Publish
+                </button>
+              ) : null}
+              {canArchive ? (
+                <button type="button" className="dl-row-action-item" onClick={() => closeAndRun(onArchive)}>
+                  Archive
+                </button>
+              ) : null}
+              {canSetDefaultQuote ? (
+                <button type="button" className="dl-row-action-item" onClick={() => closeAndRun(onSetDefaultQuote)}>
+                  Set Default Quote
+                </button>
+              ) : null}
+              {canSetDefaultInvoice ? (
+                <button type="button" className="dl-row-action-item" onClick={() => closeAndRun(onSetDefaultInvoice)}>
+                  Set Default Invoice
+                </button>
+              ) : null}
+              <Link
+                to={`/templates/${templateId}/editor`}
+                className="dl-row-action-item"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+              >
+                Open Editor
+              </Link>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
 }
