@@ -10,6 +10,7 @@ import { Toggle } from '@/design-system/primitives/Toggle';
 import { EmptyState } from '@/design-system/patterns/EmptyState';
 import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
+import { toSanitizedDecimalNumber } from '@/utils/numeric-input';
 import {
   buildCloneDraft,
   createDefaultItemFormValues,
@@ -289,11 +290,10 @@ export function ProductServiceFormPage() {
             <div className="dl-form-grid">
               <Input
                 label="Selling Price / Sales Rate"
-                type="number"
-                min={0}
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={values.salesRate}
-                onChange={(event) => setField('salesRate', Number(event.target.value))}
+                onChange={(event) => setField('salesRate', toSanitizedDecimalNumber(event.target.value))}
               />
               <Select
                 label="Sales Account"
@@ -318,11 +318,10 @@ export function ProductServiceFormPage() {
             <div className="dl-form-grid">
               <Input
                 label="Cost Price / Purchase Rate"
-                type="number"
-                min={0}
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={values.purchaseRate}
-                onChange={(event) => setField('purchaseRate', Number(event.target.value))}
+                onChange={(event) => setField('purchaseRate', toSanitizedDecimalNumber(event.target.value))}
               />
               <Select
                 label="Purchase Account"

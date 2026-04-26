@@ -10,6 +10,63 @@ function buildFromAddress(smtp) {
   return `"${smtp.fromName}" <${smtp.fromEmail}>`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function extractProofOfPaymentUrl(bodyText) {
+  const text = String(bodyText || '');
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const labelIndex = lines.findIndex((line) =>
+    /^upload proof of payment:$/i.test(line) || /^submit proof of payment:$/i.test(line),
+  );
+  if (labelIndex >= 0) {
+    for (let index = labelIndex + 1; index < lines.length; index += 1) {
+      const candidate = lines[index];
+      if (!candidate) continue;
+      const match = candidate.match(/^https?:\/\/[^\s]+$/i);
+      if (match) return match[0];
+      break;
+    }
+  }
+
+  const fallbackMatch = text.match(/https?:\/\/[^\s]+/i);
+  return fallbackMatch ? fallbackMatch[0] : undefined;
+}
+
+function buildEmailHtml(bodyText) {
+  const lines = String(bodyText || '').split(/\r?\n/);
+  const url = extractProofOfPaymentUrl(bodyText);
+  const escapedBody = lines
+    .map((line) => escapeHtml(line))
+    .join('<br/>');
+
+  if (!url) {
+    return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2937;">${escapedBody}</div>`;
+  }
+
+  const safeUrl = escapeHtml(url);
+  const buttonHtml = `
+    <div style="margin:16px 0;">
+      <a
+        href="${safeUrl}"
+        target="_blank"
+        rel="noopener noreferrer"
+        style="display:inline-block;padding:12px 18px;background:#174B7A;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;"
+      >
+        Upload Proof of Payment
+      </a>
+    </div>
+  `;
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2937;">${escapedBody}${buttonHtml}</div>`;
+}
+
 async function sendWithNodemailer(config, payload) {
   const smtp = config.email.smtp;
   const transporter = nodemailer.createTransport({
@@ -25,6 +82,7 @@ async function sendWithNodemailer(config, payload) {
     cc: payload.recipient.cc || undefined,
     subject: payload.subject,
     text: payload.bodyText,
+    html: buildEmailHtml(payload.bodyText),
     attachments: [
       {
         filename: payload.attachment.fileName,

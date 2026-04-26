@@ -1,6 +1,7 @@
 import { Button } from '@/design-system/primitives/Button';
 import { formatCurrency } from '@/utils/format';
 import { multiplyQuantityByUnitPriceMinor, percentageOfMinor, toMinor } from '../domain/money';
+import { toSanitizedDecimalNumber } from '@/utils/numeric-input';
 
 export interface LineItemValue {
   id: string;
@@ -36,8 +37,7 @@ function calculateLineTotalMajor(item: LineItemValue): number {
 }
 
 function safeNumericInput(value: string): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
+  return toSanitizedDecimalNumber(value);
 }
 
 export function LineItemsEditor<TItem extends LineItemValue>({
@@ -122,9 +122,8 @@ export function LineItemsEditor<TItem extends LineItemValue>({
                   <td>
                     <input
                       className="dl-input"
-                      type="number"
-                      step="0.01"
-                      min={0}
+                      type="text"
+                      inputMode="decimal"
                       value={item.quantity}
                       onChange={(event) =>
                         updateItem(index, 'quantity', safeNumericInput(event.target.value) as TItem[keyof TItem])
@@ -137,9 +136,8 @@ export function LineItemsEditor<TItem extends LineItemValue>({
                   <td>
                     <input
                       className="dl-input"
-                      type="number"
-                      step="0.01"
-                      min={0}
+                      type="text"
+                      inputMode="decimal"
                       value={item.unitPrice}
                       onChange={(event) =>
                         updateItem(index, 'unitPrice', safeNumericInput(event.target.value) as TItem[keyof TItem])
@@ -152,10 +150,8 @@ export function LineItemsEditor<TItem extends LineItemValue>({
                   <td>
                     <input
                       className="dl-input"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      max={100}
+                      type="text"
+                      inputMode="decimal"
                       value={item.discountPercent}
                       onChange={(event) =>
                         updateItem(
@@ -172,10 +168,8 @@ export function LineItemsEditor<TItem extends LineItemValue>({
                   <td>
                     <input
                       className="dl-input"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      max={100}
+                      type="text"
+                      inputMode="decimal"
                       value={item.taxRatePercent}
                       onChange={(event) =>
                         updateItem(

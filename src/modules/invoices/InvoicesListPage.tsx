@@ -27,7 +27,28 @@ type SortFilter =
   | 'number_desc'
   | 'number_asc';
 
-type SegmentFilter = 'all' | 'needs_collection' | 'overdue' | 'paid';
+type SegmentFilter = 'all' | 'needs_collection' | 'pending_review' | 'overdue' | 'paid';
+
+function paymentSubmissionStateLabel(
+  state: InvoiceSummary['paymentSubmissionState'],
+  pendingCount?: number,
+): string {
+  if (state === 'submitted') return `POP Submitted${pendingCount && pendingCount > 1 ? ` (${pendingCount})` : ''}`;
+  if (state === 'under_review') return `POP Under Review${pendingCount && pendingCount > 1 ? ` (${pendingCount})` : ''}`;
+  if (state === 'rejected') return 'POP Rejected';
+  if (state === 'approved') return 'POP Approved';
+  return 'POP';
+}
+
+function paymentSubmissionStateTone(
+  state: InvoiceSummary['paymentSubmissionState'],
+): 'info' | 'warning' | 'danger' | 'success' | 'neutral' {
+  if (state === 'submitted') return 'info';
+  if (state === 'under_review') return 'warning';
+  if (state === 'rejected') return 'danger';
+  if (state === 'approved') return 'success';
+  return 'neutral';
+}
 
 export function InvoicesListPage() {
   const navigate = useNavigate();
@@ -63,10 +84,14 @@ export function InvoicesListPage() {
         issueDateTo || undefined,
       );
       const dueMatch = dueBefore.length === 0 || invoice.dueDate <= dueBefore;
+      const hasPendingSubmission =
+        invoice.paymentSubmissionState === 'submitted' ||
+        invoice.paymentSubmissionState === 'under_review';
       const segmentMatch =
         segment === 'all'
         || (segment === 'overdue' && invoice.status === 'overdue')
         || (segment === 'paid' && invoice.status === 'paid')
+        || (segment === 'pending_review' && hasPendingSubmission)
         || (
           segment === 'needs_collection'
           && invoice.outstandingMinor > 0
@@ -252,6 +277,7 @@ export function InvoicesListPage() {
           options={[
             { label: 'All Invoices', value: 'all' },
             { label: 'Needs Collection', value: 'needs_collection' },
+            { label: 'Proof Pending Review', value: 'pending_review' },
             { label: 'Overdue', value: 'overdue' },
             { label: 'Paid', value: 'paid' },
           ]}
@@ -353,7 +379,17 @@ export function InvoicesListPage() {
                       <td>{invoice.orderNumber || '—'}</td>
                       <td>{clientName}</td>
                       <td>
-                        <InvoiceStatusBadge status={invoice.status} />
+                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <InvoiceStatusBadge status={invoice.status} />
+                          {invoice.paymentSubmissionState && invoice.paymentSubmissionState !== 'none' ? (
+                            <span className={`dl-badge ${paymentSubmissionStateTone(invoice.paymentSubmissionState)}`}>
+                              {paymentSubmissionStateLabel(
+                                invoice.paymentSubmissionState,
+                                invoice.pendingSubmissionCount,
+                              )}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td>{formatDate(invoice.dueDate)}</td>
                       <td>{formatMinorCurrency(invoice.totalMinor)}</td>
@@ -404,6 +440,13 @@ export function InvoicesListPage() {
                           <div>{formatMinorCurrency(invoice.outstandingMinor)}</div>
                         </div>
                       </div>
+                      {invoice.paymentSubmissionState && invoice.paymentSubmissionState !== 'none' ? (
+                        <div style={{ marginTop: 8 }}>
+                          <span className={`dl-badge ${paymentSubmissionStateTone(invoice.paymentSubmissionState)}`}>
+                            {paymentSubmissionStateLabel(invoice.paymentSubmissionState, invoice.pendingSubmissionCount)}
+                          </span>
+                        </div>
+                      ) : null}
                       <div className="dl-inline-actions" style={{ marginTop: 12 }}>
                         <Link to={`/invoices/${invoice.id}`}>
                           <Button size="sm" variant="secondary">Open</Button>

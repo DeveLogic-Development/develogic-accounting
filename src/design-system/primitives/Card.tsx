@@ -5,9 +5,11 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   title?: string;
   subtitle?: string;
   rightSlot?: ReactNode;
+  action?: ReactNode;
 }
 
-export function Card({ title, subtitle, rightSlot, className, children, ...props }: CardProps) {
+export function Card({ title, subtitle, rightSlot, action, className, children, ...props }: CardProps) {
+  const headerAction = rightSlot ?? action;
   return (
     <section className={cn('dl-card', className)} {...props}>
       {title ? (
@@ -16,7 +18,7 @@ export function Card({ title, subtitle, rightSlot, className, children, ...props
             <h3 className="dl-card-title">{title}</h3>
             {subtitle ? <p className="dl-card-subtitle">{subtitle}</p> : null}
           </div>
-          {rightSlot}
+          {headerAction}
         </header>
       ) : null}
       {children}

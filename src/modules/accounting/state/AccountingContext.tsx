@@ -7,6 +7,9 @@ import {
   InvoiceActivityEvent,
   InvoiceAttachment,
   InvoiceFormValues,
+  InvoicePaymentSubmission,
+  InvoicePaymentSubmissionPublicInput,
+  InvoicePaymentSubmissionReviewInput,
   Payment,
   PaymentInput,
   Quote,
@@ -19,7 +22,13 @@ import {
   RecurringInvoiceProfile,
   RecurringInvoiceStatus,
 } from '../domain/types';
-import { validateInvoiceForm, validatePaymentInput, validateQuoteForm } from '../domain/validation';
+import {
+  validateInvoiceForm,
+  validateInvoicePaymentSubmissionPublicInput,
+  validateInvoicePaymentSubmissionReviewInput,
+  validatePaymentInput,
+  validateQuoteForm,
+} from '../domain/validation';
 import { mapInvoiceItemsFormToDomain, mapQuoteItemsFormToDomain } from '../domain/mappers';
 import { addDaysIsoDate, addRecurringIntervalIsoDate, todayIsoDate } from '../domain/date';
 import { createId } from '../domain/id';
@@ -28,9 +37,17 @@ import { canEditInvoice, canRecordPayment, canTransitionInvoice } from '../domai
 import { convertQuoteToInvoice } from '../domain/conversion';
 import { toMinor } from '../domain/money';
 import { deriveInvoicePaymentSummary } from '../domain/calculations';
+import {
+  buildInvoicePaymentReference,
+  canTransitionSubmission,
+  createInvoicePublicPaymentToken,
+  isInvoiceEligibleForProofSubmission,
+  selectInvoicePaymentSubmissions,
+} from '../domain/eft';
 import { selectInvoiceById, selectInvoiceSummaries, selectQuoteById, selectQuoteSummaries } from '../domain/selectors';
 import { useNotificationsContext } from '@/modules/notifications/state/NotificationsContext';
 import { canUseSupabaseRuntimeState, loadRuntimeState, saveRuntimeState } from '@/lib/supabase/runtime-state';
+import { useBusinessSettings } from '@/modules/settings/hooks/useBusinessSettings';
 
 interface ActionResult<T = undefined> {
   ok: boolean;
@@ -47,7 +64,13 @@ interface AccountingContextValue {
   getInvoiceById: (invoiceId: string) => Invoice | undefined;
   getRecurringInvoiceProfileById: (profileId: string) => RecurringInvoiceProfile | undefined;
   getInvoicePayments: (invoiceId: string) => Payment[];
+  getInvoicePaymentSubmissions: (invoiceId: string) => InvoicePaymentSubmission[];
+  getAllInvoicePaymentSubmissions: () => InvoicePaymentSubmission[];
   getInvoicePaymentSummary: (invoiceId: string) => ReturnType<typeof deriveInvoicePaymentSummary> | undefined;
+  ensureInvoicePublicPaymentLink: (
+    invoiceId: string,
+    options?: { regenerateToken?: boolean; clientName?: string },
+  ) => ActionResult<{ publicPaymentToken: string; paymentReference: string }>;
   createQuote: (values: QuoteFormValues) => ActionResult<Quote>;
   updateQuote: (quoteId: string, values: QuoteFormValues) => ActionResult<Quote>;
   duplicateQuote: (quoteId: string) => ActionResult<Quote>;
@@ -78,6 +101,13 @@ interface AccountingContextValue {
   duplicateInvoice: (invoiceId: string) => ActionResult<Invoice>;
   transitionInvoice: (invoiceId: string, target: Invoice['status'], note?: string) => ActionResult<Invoice>;
   recordPayment: (invoiceId: string, input: PaymentInput) => ActionResult;
+  submitInvoicePaymentProofPublic: (
+    input: InvoicePaymentSubmissionPublicInput,
+  ) => ActionResult<InvoicePaymentSubmission>;
+  reviewInvoicePaymentSubmission: (
+    submissionId: string,
+    input: InvoicePaymentSubmissionReviewInput,
+  ) => ActionResult<InvoicePaymentSubmission>;
   addInvoiceAttachment: (
     invoiceId: string,
     input: {
@@ -123,6 +153,7 @@ function isAccountingState(value: unknown): value is AccountingState {
     Array.isArray(candidate.quotes) &&
     Array.isArray(candidate.invoices) &&
     Array.isArray(candidate.payments) &&
+    (candidate.paymentSubmissions === undefined || Array.isArray(candidate.paymentSubmissions)) &&
     (candidate.recurringInvoiceProfiles === undefined || Array.isArray(candidate.recurringInvoiceProfiles)) &&
     typeof candidate.quoteSequenceNext === 'number' &&
     typeof candidate.invoiceSequenceNext === 'number'
@@ -132,6 +163,7 @@ function isAccountingState(value: unknown): value is AccountingState {
 function normalizeStateForConsumers(state: AccountingState): AccountingState {
   return {
     ...state,
+    paymentSubmissions: state.paymentSubmissions ?? [],
     recurringInvoiceProfiles: state.recurringInvoiceProfiles ?? [],
   };
 }
@@ -189,6 +221,9 @@ function normalizeInvoiceForConsumers(invoice: Invoice): Invoice {
     salesperson: invoice.salesperson ?? '',
     subject: invoice.subject ?? '',
     terms: invoice.terms ?? 'custom',
+    eftPaymentReference: invoice.eftPaymentReference ?? invoice.invoiceNumber,
+    publicPaymentEnabled: invoice.publicPaymentEnabled ?? true,
+    publicPaymentToken: invoice.publicPaymentToken ?? '',
     notes: invoice.notes ?? '',
     paymentTerms: invoice.paymentTerms ?? '',
     termsAndConditions: invoice.termsAndConditions ?? invoice.paymentTerms ?? '',
@@ -275,6 +310,7 @@ function createInvoiceActivityEvent(input: {
 export function AccountingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AccountingState>(createInitialState);
   const notifications = useNotificationsContext();
+  const businessSettings = useBusinessSettings();
   const [remoteHydrationComplete, setRemoteHydrationComplete] = useState(!canUseSupabaseRuntimeState());
 
   const commit = (updater: (previous: AccountingState) => AccountingState) => {
@@ -336,10 +372,51 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         .filter((payment) => payment.invoiceId === invoiceId)
         .slice()
         .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate)),
+    getInvoicePaymentSubmissions: (invoiceId) => selectInvoicePaymentSubmissions(state, invoiceId),
+    getAllInvoicePaymentSubmissions: () =>
+      state.paymentSubmissions
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     getInvoicePaymentSummary: (invoiceId) => {
       const invoice = selectInvoiceById(state, invoiceId);
       if (!invoice) return undefined;
       return deriveInvoicePaymentSummary(invoice, state.payments);
+    },
+    ensureInvoicePublicPaymentLink: (invoiceId, options) => {
+      const invoice = selectInvoiceById(state, invoiceId);
+      if (!invoice) return { ok: false, error: 'Invoice not found.' };
+
+      const nowIso = new Date().toISOString();
+      const shouldRegenerate = options?.regenerateToken === true;
+      const token = !shouldRegenerate && invoice.publicPaymentToken
+        ? invoice.publicPaymentToken
+        : createInvoicePublicPaymentToken();
+      const paymentReference = buildInvoicePaymentReference({
+        invoiceNumber: invoice.invoiceNumber,
+        clientName: options?.clientName,
+        instructionTemplate: businessSettings.eftReferenceInstruction,
+      });
+
+      const nextInvoice = normalizeInvoiceForConsumers({
+        ...invoice,
+        publicPaymentEnabled: true,
+        publicPaymentToken: token,
+        eftPaymentReference: paymentReference,
+        updatedAt: nowIso,
+      });
+
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.map((entry) => (entry.id === invoiceId ? nextInvoice : entry)),
+      }));
+
+      return {
+        ok: true,
+        data: {
+          publicPaymentToken: token,
+          paymentReference,
+        },
+      };
     },
     createQuote: (values) => {
       const validation = validateQuoteForm(values);
@@ -897,6 +974,13 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
           termsAndConditions: values.termsAndConditions ?? values.paymentTerms ?? values.terms,
           internalMemo: values.internalMemo,
           recipientEmails: normalizeRecipientEmails(values.recipientEmails),
+          eftPaymentReference: buildInvoicePaymentReference({
+            invoiceNumber,
+            clientName: values.clientId,
+            instructionTemplate: businessSettings.eftReferenceInstruction,
+          }),
+          publicPaymentToken: createInvoicePublicPaymentToken(),
+          publicPaymentEnabled: businessSettings.eftPublicSubmissionEnabled,
           billingAddressSnapshot: values.billingAddressSnapshot,
           shippingAddressSnapshot: values.shippingAddressSnapshot,
           attachments: values.attachments ?? [],
@@ -975,6 +1059,15 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
         termsAndConditions: values.termsAndConditions ?? values.paymentTerms ?? values.terms,
         internalMemo: values.internalMemo,
         recipientEmails: normalizeRecipientEmails(values.recipientEmails),
+        eftPaymentReference:
+          invoice.eftPaymentReference ??
+          buildInvoicePaymentReference({
+            invoiceNumber: invoice.invoiceNumber,
+            clientName: values.clientId,
+            instructionTemplate: businessSettings.eftReferenceInstruction,
+          }),
+        publicPaymentToken: invoice.publicPaymentToken ?? createInvoicePublicPaymentToken(),
+        publicPaymentEnabled: invoice.publicPaymentEnabled ?? businessSettings.eftPublicSubmissionEnabled,
         billingAddressSnapshot: values.billingAddressSnapshot,
         shippingAddressSnapshot: values.shippingAddressSnapshot,
         attachments: values.attachments ?? invoice.attachments ?? [],
@@ -1031,6 +1124,13 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
           dueDate: addDaysIsoDate(issueDate, 14),
           terms: 'custom',
           sourceQuoteId: undefined,
+          eftPaymentReference: buildInvoicePaymentReference({
+            invoiceNumber: nextNumber,
+            clientName: source.clientId,
+            instructionTemplate: businessSettings.eftReferenceInstruction,
+          }),
+          publicPaymentToken: createInvoicePublicPaymentToken(),
+          publicPaymentEnabled: source.publicPaymentEnabled ?? businessSettings.eftPublicSubmissionEnabled,
           createdAt: nowIso,
           updatedAt: nowIso,
           sentAt: undefined,
@@ -1260,6 +1360,263 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
       }
 
       return { ok: true };
+    },
+    submitInvoicePaymentProofPublic: (input) => {
+      const validation = validateInvoicePaymentSubmissionPublicInput(input, {
+        maxFileSizeBytes: businessSettings.eftProofMaxFileSizeBytes,
+        allowedMimeTypes: businessSettings.eftProofAllowedMimeTypes,
+      });
+      if (!validation.isValid) {
+        return { ok: false, error: summarizeValidationErrors(validation.issues) };
+      }
+
+      const invoice = state.invoices.find(
+        (entry) =>
+          entry.publicPaymentEnabled !== false &&
+          entry.publicPaymentToken &&
+          entry.publicPaymentToken === input.publicToken,
+      );
+      if (!invoice) {
+        return { ok: false, error: 'Payment link is invalid or expired.' };
+      }
+
+      const eligibility = isInvoiceEligibleForProofSubmission({
+        invoice,
+        state,
+        settings: {
+          eftEnabled: businessSettings.eftEnabled,
+          eftPublicSubmissionEnabled: businessSettings.eftPublicSubmissionEnabled,
+        },
+      });
+      if (!eligibility.allowed) {
+        return { ok: false, error: eligibility.reason ?? 'This invoice cannot accept proof submissions.' };
+      }
+
+      const nowIso = new Date().toISOString();
+      const submission: InvoicePaymentSubmission = {
+        id: createId('popsub'),
+        invoiceId: invoice.id,
+        clientId: invoice.clientId,
+        publicToken: input.publicToken,
+        status: 'submitted',
+        payerName: input.payerName?.trim() || undefined,
+        payerEmail: input.payerEmail?.trim() || undefined,
+        submittedAmountMinor: toMinor(input.submittedAmount),
+        submittedPaymentDate: input.submittedPaymentDate,
+        submittedReference: input.submittedReference?.trim() || undefined,
+        note: input.note?.trim() || undefined,
+        proofFile: {
+          id: createId('popfile'),
+          fileName: input.proofFile.fileName.trim(),
+          mimeType: input.proofFile.mimeType.trim().toLowerCase(),
+          sizeBytes: input.proofFile.sizeBytes,
+          uploadedAt: nowIso,
+          dataUrl: input.proofFile.dataUrl,
+          storageKey: input.proofFile.storageKey,
+        },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      commit((previous) => ({
+        ...previous,
+        paymentSubmissions: [submission, ...previous.paymentSubmissions],
+        invoices: previous.invoices.map((entry) =>
+          entry.id === invoice.id
+            ? normalizeInvoiceForConsumers({
+                ...entry,
+                updatedAt: nowIso,
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createInvoiceActivityEvent({
+                    event: 'payment_submission_created',
+                    at: nowIso,
+                    message: `Proof of payment submitted for ${entry.invoiceNumber}.`,
+                  }),
+                ],
+              })
+            : entry,
+        ),
+      }));
+
+      notifications.notify({
+        level: 'info',
+        source: 'payments',
+        title: 'Proof of Payment Submitted',
+        message: `New payment proof submitted for ${invoice.invoiceNumber}.`,
+        persistent: true,
+        toast: true,
+        route: `/invoices/${invoice.id}`,
+        relatedEntityType: 'invoice',
+        relatedEntityId: invoice.id,
+        dedupeKey: `invoice:${invoice.id}:submission:${submission.id}`,
+      });
+
+      return { ok: true, data: submission };
+    },
+    reviewInvoicePaymentSubmission: (submissionId, input) => {
+      const submission = state.paymentSubmissions.find((entry) => entry.id === submissionId);
+      if (!submission) return { ok: false, error: 'Payment submission not found.' };
+      const invoice = selectInvoiceById(state, submission.invoiceId);
+      if (!invoice) return { ok: false, error: 'Source invoice not found.' };
+
+      const transition = canTransitionSubmission(submission.status, input.status);
+      if (!transition.allowed) {
+        return { ok: false, error: transition.reason ?? 'Submission transition is not allowed.' };
+      }
+
+      const currentSummary = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), state.payments);
+      const validation = validateInvoicePaymentSubmissionReviewInput(
+        submission,
+        input,
+        currentSummary.outstandingMinor / 100,
+      );
+      if (!validation.isValid) {
+        return { ok: false, error: summarizeValidationErrors(validation.issues) };
+      }
+
+      const nowIso = new Date().toISOString();
+      let reviewedSubmission: InvoicePaymentSubmission = {
+        ...submission,
+        status: input.status,
+        reviewNotes: input.reviewNotes?.trim() || submission.reviewNotes,
+        reviewedBy: 'finance',
+        reviewedAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      if (input.status === 'approved') {
+        const approvedAmount = input.approvedAmount ?? submission.submittedAmountMinor / 100;
+        const payment: Payment = {
+          id: createId('payment'),
+          invoiceId: invoice.id,
+          amountMinor: toMinor(approvedAmount),
+          paymentDate: input.approvedPaymentDate || submission.submittedPaymentDate || todayIsoDate(),
+          method: 'bank_transfer',
+          reference:
+            input.approvedPaymentReference?.trim() ||
+            submission.submittedReference ||
+            invoice.eftPaymentReference ||
+            invoice.invoiceNumber,
+          note:
+            input.reviewNotes?.trim() ||
+            `Approved from proof submission ${submission.id}.`,
+          createdAt: nowIso,
+        };
+
+        const nextPayments = [payment, ...state.payments];
+        const nextSummary = deriveInvoicePaymentSummary(normalizeInvoiceForConsumers(invoice), nextPayments);
+
+        let nextInvoice: Invoice = normalizeInvoiceForConsumers({
+          ...invoice,
+          status: nextSummary.derivedStatus,
+          updatedAt: nowIso,
+          activityLog: [
+            ...(invoice.activityLog ?? []),
+            createInvoiceActivityEvent({
+              event: 'payment_submission_approved',
+              at: nowIso,
+              message: `Payment proof approved. Payment recorded for ${approvedAmount.toFixed(2)}.`,
+            }),
+            createInvoiceActivityEvent({
+              event: 'payment_recorded',
+              at: nowIso,
+              message: `Payment recorded from proof submission: ${approvedAmount.toFixed(2)}.`,
+            }),
+          ],
+        });
+
+        if (nextSummary.derivedStatus !== invoice.status) {
+          nextInvoice = appendStatusEvent(
+            nextInvoice,
+            nextSummary.derivedStatus,
+            nowIso,
+            `Payment proof approved (${approvedAmount.toFixed(2)})`,
+          );
+        }
+
+        reviewedSubmission = {
+          ...reviewedSubmission,
+          approvedPaymentId: payment.id,
+        };
+
+        commit((previous) => ({
+          ...previous,
+          payments: [payment, ...previous.payments],
+          invoices: previous.invoices.map((entry) => (entry.id === invoice.id ? nextInvoice : entry)),
+          paymentSubmissions: previous.paymentSubmissions.map((entry) =>
+            entry.id === submissionId ? reviewedSubmission : entry,
+          ),
+        }));
+
+        notifications.notify({
+          level: nextSummary.derivedStatus === 'paid' ? 'success' : 'info',
+          source: 'payments',
+          title: nextSummary.derivedStatus === 'paid' ? 'Invoice Paid' : 'Payment Submission Approved',
+          message:
+            nextSummary.derivedStatus === 'paid'
+              ? `${invoice.invoiceNumber} is now fully paid.`
+              : `Payment submission approved for ${invoice.invoiceNumber}.`,
+          persistent: true,
+          toast: true,
+          route: `/invoices/${invoice.id}`,
+          relatedEntityType: 'invoice',
+          relatedEntityId: invoice.id,
+          dedupeKey: `invoice:${invoice.id}:submission-approved:${submission.id}`,
+        });
+
+        return { ok: true, data: reviewedSubmission };
+      }
+
+      const reviewEvent: InvoiceActivityEvent['event'] =
+        input.status === 'rejected' ? 'payment_submission_rejected' : 'payment_submission_reviewed';
+      const reviewMessage =
+        input.status === 'under_review'
+          ? `Payment proof moved to review queue.`
+          : input.status === 'rejected'
+            ? `Payment proof rejected${input.reviewNotes?.trim() ? ` · ${input.reviewNotes.trim()}` : ''}.`
+            : `Payment proof status updated to ${input.status.replace('_', ' ')}.`;
+
+      commit((previous) => ({
+        ...previous,
+        invoices: previous.invoices.map((entry) =>
+          entry.id === invoice.id
+            ? normalizeInvoiceForConsumers({
+                ...entry,
+                updatedAt: nowIso,
+                activityLog: [
+                  ...(entry.activityLog ?? []),
+                  createInvoiceActivityEvent({
+                    event: reviewEvent,
+                    at: nowIso,
+                    message: reviewMessage,
+                  }),
+                ],
+              })
+            : entry,
+        ),
+        paymentSubmissions: previous.paymentSubmissions.map((entry) =>
+          entry.id === submissionId ? reviewedSubmission : entry,
+        ),
+      }));
+
+      notifications.notify({
+        level: input.status === 'rejected' ? 'warning' : 'info',
+        source: 'payments',
+        title: input.status === 'rejected' ? 'Payment Submission Rejected' : 'Payment Submission Updated',
+        message:
+          input.status === 'rejected'
+            ? `${invoice.invoiceNumber} proof submission was rejected.`
+            : `${invoice.invoiceNumber} proof submission marked ${input.status.replace('_', ' ')}.`,
+        persistent: true,
+        toast: true,
+        route: `/invoices/${invoice.id}`,
+        relatedEntityType: 'invoice',
+        relatedEntityId: invoice.id,
+        dedupeKey: `invoice:${invoice.id}:submission:${submission.id}:${input.status}`,
+      });
+
+      return { ok: true, data: reviewedSubmission };
     },
     addInvoiceAttachment: (invoiceId, input) => {
       const invoice = selectInvoiceById(state, invoiceId);

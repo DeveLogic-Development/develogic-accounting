@@ -12,6 +12,7 @@ import { Tabs } from '@/design-system/primitives/Tabs';
 import { Textarea } from '@/design-system/primitives/Textarea';
 import { ClientUpsertInput, CustomerAddress, CustomerContactPerson } from '@/modules/master-data/domain/types';
 import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
+import { sanitizeDecimalTextInput } from '@/utils/numeric-input';
 
 type CustomerFormTab =
   | 'other_details'
@@ -607,11 +608,10 @@ export function ClientFormPage() {
               />
               <Input
                 label="Opening Balance"
-                type="number"
-                min={0}
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={formState.openingBalance}
-                onChange={(event) => updateForm('openingBalance', event.target.value)}
+                onChange={(event) => updateForm('openingBalance', sanitizeDecimalTextInput(event.target.value))}
               />
               <Select
                 label="Payment Terms"

@@ -24,6 +24,7 @@ import { usePdfArchive } from '@/modules/pdf/hooks/usePdfArchive';
 import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 import { createId } from '@/modules/accounting/domain/id';
 import { formatDate } from '@/utils/format';
+import { toSanitizedDecimalNumber } from '@/utils/numeric-input';
 
 type QuoteFormTab = 'details' | 'items' | 'notes' | 'attachments';
 
@@ -649,21 +650,19 @@ export function QuoteFormPage() {
                 />
                 <Input
                   label="Adjustment"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={values.adjustment ?? 0}
-                  onChange={(event) => applyValues('adjustment', Number(event.target.value))}
+                  onChange={(event) => applyValues('adjustment', toSanitizedDecimalNumber(event.target.value))}
                   disabled={!editable}
                   helperText={getFieldError('adjustment')}
                 />
                 <Input
                   label="Document Discount %"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={values.documentDiscountPercent}
-                  onChange={(event) => applyValues('documentDiscountPercent', Number(event.target.value))}
+                  onChange={(event) => applyValues('documentDiscountPercent', toSanitizedDecimalNumber(event.target.value))}
                   disabled={!editable}
                   helperText={getFieldError('documentDiscountPercent')}
                 />

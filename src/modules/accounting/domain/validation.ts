@@ -1,5 +1,8 @@
 import {
   InvoiceFormValues,
+  InvoicePaymentSubmission,
+  InvoicePaymentSubmissionPublicInput,
+  InvoicePaymentSubmissionReviewInput,
   PaymentInput,
   QuoteFormValues,
   ValidationIssue,
@@ -189,6 +192,95 @@ export function validatePaymentInput(input: PaymentInput, outstandingAmount: num
 
   if (!input.paymentDate) {
     issues.push({ field: 'paymentDate', message: 'Payment date is required.' });
+  }
+
+  return makeResult(issues);
+}
+
+export function validateInvoicePaymentSubmissionPublicInput(
+  input: InvoicePaymentSubmissionPublicInput,
+  options?: {
+    maxFileSizeBytes?: number;
+    allowedMimeTypes?: string[];
+  },
+): ValidationResult {
+  const issues: ValidationIssue[] = [];
+  const allowedMimeTypes = new Set(
+    (options?.allowedMimeTypes ?? ['application/pdf', 'image/jpeg', 'image/png']).map((entry) =>
+      entry.trim().toLowerCase(),
+    ),
+  );
+  const maxFileSizeBytes = options?.maxFileSizeBytes ?? 10 * 1024 * 1024;
+
+  if (!input.publicToken.trim()) {
+    issues.push({ field: 'publicToken', message: 'Invoice payment submission token is required.' });
+  }
+
+  if (!(input.submittedAmount > 0)) {
+    issues.push({ field: 'submittedAmount', message: 'Submitted payment amount must be greater than 0.' });
+  }
+
+  if (!input.submittedPaymentDate) {
+    issues.push({ field: 'submittedPaymentDate', message: 'Payment date is required.' });
+  }
+
+  if (!input.proofFile.fileName.trim()) {
+    issues.push({ field: 'proofFile.fileName', message: 'Proof of payment file name is required.' });
+  }
+
+  if (!(input.proofFile.sizeBytes > 0)) {
+    issues.push({ field: 'proofFile.sizeBytes', message: 'Proof of payment file size must be greater than 0.' });
+  } else if (input.proofFile.sizeBytes > maxFileSizeBytes) {
+    issues.push({
+      field: 'proofFile.sizeBytes',
+      message: `Proof of payment file exceeds the maximum size (${Math.round(maxFileSizeBytes / 1024 / 1024)} MB).`,
+    });
+  }
+
+  const normalizedMimeType = input.proofFile.mimeType.trim().toLowerCase();
+  if (!normalizedMimeType) {
+    issues.push({ field: 'proofFile.mimeType', message: 'Proof of payment file type is required.' });
+  } else if (!allowedMimeTypes.has(normalizedMimeType)) {
+    issues.push({ field: 'proofFile.mimeType', message: 'Unsupported proof of payment file type.' });
+  }
+
+  if (
+    input.payerEmail &&
+    input.payerEmail.trim().length > 0 &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.payerEmail.trim())
+  ) {
+    issues.push({ field: 'payerEmail', message: 'Payer email must be valid.' });
+  }
+
+  return makeResult(issues);
+}
+
+export function validateInvoicePaymentSubmissionReviewInput(
+  submission: InvoicePaymentSubmission,
+  input: InvoicePaymentSubmissionReviewInput,
+  outstandingAmount: number,
+): ValidationResult {
+  const issues: ValidationIssue[] = [];
+
+  if (submission.status === 'approved') {
+    issues.push({ field: 'status', message: 'Approved submissions cannot be reviewed again.' });
+  }
+
+  if (input.status === 'approved') {
+    const approvedAmount = input.approvedAmount ?? submission.submittedAmountMinor / 100;
+    if (!(approvedAmount > 0)) {
+      issues.push({ field: 'approvedAmount', message: 'Approved amount must be greater than 0.' });
+    }
+    if (approvedAmount > outstandingAmount) {
+      issues.push({ field: 'approvedAmount', message: 'Approved amount cannot exceed outstanding balance.' });
+    }
+    if (input.approvedPaymentDate && Number.isNaN(new Date(input.approvedPaymentDate).getTime())) {
+      issues.push({ field: 'approvedPaymentDate', message: 'Approved payment date is invalid.' });
+    }
+  }
+
+  if (input.status === 'rejected' && !input.reviewNotes?.trim()) {
+    issues.push({ field: 'reviewNotes', message: 'Review notes are required when rejecting a submission.' });
   }
 
   return makeResult(issues);

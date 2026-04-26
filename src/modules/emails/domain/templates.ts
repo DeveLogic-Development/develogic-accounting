@@ -29,7 +29,12 @@ Issue Date: {{issue_date}}
 Due Date: {{due_date}}
 Invoice Total: {{total_amount}}
 
-Kindly use the invoice reference when making payment.
+Payment Instructions:
+{{payment_reference_instruction}}
+{{eft_instruction_notes}}
+
+Upload Proof of Payment:
+{{proof_submission_url}}
 
 Kind regards,
 {{business_name}}`,
@@ -45,6 +50,9 @@ function toInterpolationValues(payload: EmailTemplatePayload): Record<string, st
     due_date: payload.dueDate ?? '',
     expiry_date: payload.expiryDate ?? '',
     total_amount: payload.totalFormatted,
+    payment_reference_instruction: payload.paymentReferenceInstruction ?? '',
+    eft_instruction_notes: payload.eftInstructionNotes ?? '',
+    proof_submission_url: payload.proofSubmissionUrl ?? '',
   };
 }
 

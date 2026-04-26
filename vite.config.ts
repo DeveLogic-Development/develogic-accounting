@@ -81,7 +81,12 @@ function emailApiDevPlugin(): Plugin {
 
         const requestUrl = new URL(req.url, 'http://localhost');
         const pathname = requestUrl.pathname;
-        if (pathname !== '/api/email/capabilities' && pathname !== '/api/email/send') {
+        if (
+          pathname !== '/api/email/capabilities' &&
+          pathname !== '/api/email/send' &&
+          pathname !== '/api/public/invoice-payment/context' &&
+          pathname !== '/api/public/invoice-payment/submit'
+        ) {
           next();
           return;
         }
@@ -89,7 +94,7 @@ function emailApiDevPlugin(): Plugin {
         try {
           const response = createJsonResponse(res);
 
-          if (pathname === '/api/email/send') {
+          if (pathname === '/api/email/send' || pathname === '/api/public/invoice-payment/submit') {
             const mutableRequest = req as IncomingMessage & { body?: unknown };
             const rawBody = await readRequestBody(req);
             if (rawBody.trim().length > 0) {
@@ -107,8 +112,22 @@ function emailApiDevPlugin(): Plugin {
               mutableRequest.body = undefined;
             }
 
-            const { default: sendHandler } = await import('./api/email/send.js');
-            await sendHandler(mutableRequest, response);
+            if (pathname === '/api/email/send') {
+              const { default: sendHandler } = await import('./api/email/send.js');
+              await sendHandler(mutableRequest, response);
+              return;
+            }
+
+            const { default: publicSubmitHandler } = await import('./api/public/invoice-payment/submit.js');
+            await publicSubmitHandler(mutableRequest, response);
+            return;
+          }
+
+          if (pathname === '/api/public/invoice-payment/context') {
+            const mutableRequest = req as IncomingMessage & { query?: Record<string, string> };
+            mutableRequest.query = Object.fromEntries(requestUrl.searchParams.entries());
+            const { default: publicContextHandler } = await import('./api/public/invoice-payment/context.js');
+            await publicContextHandler(mutableRequest, response);
             return;
           }
 

@@ -5,6 +5,7 @@ export function createSeedState(): AccountingState {
     quotes: [],
     invoices: [],
     payments: [],
+    paymentSubmissions: [],
     recurringInvoiceProfiles: [],
     quoteSequenceNext: 1,
     invoiceSequenceNext: 1,

@@ -12,6 +12,8 @@ export type InvoiceStatus =
 export type PaymentMethod = 'bank_transfer' | 'card' | 'cash' | 'mobile_money' | 'other';
 export type RecurringInvoiceFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 export type RecurringInvoiceStatus = 'draft' | 'active' | 'paused';
+export type InvoicePaymentSubmissionStatus = 'submitted' | 'under_review' | 'approved' | 'rejected' | 'cancelled';
+export type InvoicePaymentSubmissionState = 'none' | 'submitted' | 'under_review' | 'rejected' | 'approved';
 
 export interface CurrencyAmount {
   currencyCode: string;
@@ -86,6 +88,16 @@ export interface QuoteAttachment {
 export type InvoiceAddressSnapshot = QuoteAddressSnapshot;
 export type InvoiceAttachment = QuoteAttachment;
 
+export interface InvoicePaymentProofFile {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  dataUrl?: string;
+  storageKey?: string;
+}
+
 export interface InvoiceActivityEvent {
   id: string;
   event:
@@ -100,7 +112,11 @@ export interface InvoiceActivityEvent {
     | 'voided'
     | 'deleted'
     | 'recurring_requested'
-    | 'credit_note_requested';
+    | 'credit_note_requested'
+    | 'payment_submission_created'
+    | 'payment_submission_reviewed'
+    | 'payment_submission_approved'
+    | 'payment_submission_rejected';
   at: string;
   actor?: string;
   message: string;
@@ -198,6 +214,9 @@ export interface Invoice {
   termsAndConditions?: string;
   internalMemo: string;
   recipientEmails?: string[];
+  eftPaymentReference?: string;
+  publicPaymentToken?: string;
+  publicPaymentEnabled?: boolean;
   billingAddressSnapshot?: InvoiceAddressSnapshot;
   shippingAddressSnapshot?: InvoiceAddressSnapshot;
   attachments?: InvoiceAttachment[];
@@ -223,6 +242,27 @@ export interface Payment {
   reference?: string;
   note?: string;
   createdAt: string;
+}
+
+export interface InvoicePaymentSubmission {
+  id: string;
+  invoiceId: string;
+  clientId: string;
+  publicToken: string;
+  status: InvoicePaymentSubmissionStatus;
+  payerName?: string;
+  payerEmail?: string;
+  submittedAmountMinor: number;
+  submittedPaymentDate: string;
+  submittedReference?: string;
+  note?: string;
+  proofFile: InvoicePaymentProofFile;
+  reviewNotes?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  approvedPaymentId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface QuoteFormValues {
@@ -308,6 +348,31 @@ export interface PaymentInput {
   note?: string;
 }
 
+export interface InvoicePaymentSubmissionPublicInput {
+  publicToken: string;
+  payerName?: string;
+  payerEmail?: string;
+  submittedAmount: number;
+  submittedPaymentDate: string;
+  submittedReference?: string;
+  note?: string;
+  proofFile: {
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    dataUrl?: string;
+    storageKey?: string;
+  };
+}
+
+export interface InvoicePaymentSubmissionReviewInput {
+  status: Extract<InvoicePaymentSubmissionStatus, 'under_review' | 'approved' | 'rejected' | 'cancelled'>;
+  reviewNotes?: string;
+  approvedAmount?: number;
+  approvedPaymentDate?: string;
+  approvedPaymentReference?: string;
+}
+
 export type QuoteCreatePayload = QuoteFormValues;
 export type QuoteUpdatePayload = QuoteFormValues;
 export type InvoiceCreatePayload = InvoiceFormValues;
@@ -371,6 +436,9 @@ export interface InvoiceSummary {
   outstandingMinor: number;
   terms?: string;
   salesperson?: string;
+  paymentSubmissionState?: InvoicePaymentSubmissionState;
+  pendingSubmissionCount?: number;
+  latestSubmissionAt?: string;
 }
 
 export interface RecurringInvoiceProfile {
@@ -394,6 +462,7 @@ export interface AccountingState {
   quotes: Quote[];
   invoices: Invoice[];
   payments: Payment[];
+  paymentSubmissions: InvoicePaymentSubmission[];
   recurringInvoiceProfiles: RecurringInvoiceProfile[];
   quoteSequenceNext: number;
   invoiceSequenceNext: number;

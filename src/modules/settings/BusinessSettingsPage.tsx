@@ -5,6 +5,7 @@ import { Card } from '@/design-system/primitives/Card';
 import { Input } from '@/design-system/primitives/Input';
 import { Textarea } from '@/design-system/primitives/Textarea';
 import { Select } from '@/design-system/primitives/Select';
+import { Toggle } from '@/design-system/primitives/Toggle';
 import { InlineNotice, InlineNoticeTone } from '@/design-system/patterns/InlineNotice';
 import { useNotifications } from '@/modules/notifications/hooks/useNotifications';
 import {
@@ -83,6 +84,14 @@ export function BusinessSettingsPage() {
     const nextValues: BusinessSettings = {
       ...values,
       brandColor: normalizedBrand,
+      eftProofAllowedMimeTypes:
+        values.eftProofAllowedMimeTypes.length > 0
+          ? values.eftProofAllowedMimeTypes
+          : defaultBusinessSettings.eftProofAllowedMimeTypes,
+      eftProofMaxFileSizeBytes:
+        values.eftProofMaxFileSizeBytes > 0
+          ? values.eftProofMaxFileSizeBytes
+          : defaultBusinessSettings.eftProofMaxFileSizeBytes,
     };
 
     try {
@@ -385,6 +394,99 @@ export function BusinessSettingsPage() {
               options={[
                 ...BRAND_PALETTE.map((entry) => ({ label: entry.label, value: entry.value })),
               ]}
+            />
+          </div>
+        </Card>
+      </div>
+
+      <div className="dl-page-section">
+        <Card title="EFT Payment Settings" subtitle="Manual EFT payment instructions and proof-of-payment behavior">
+          <div className="dl-form-grid">
+            <Toggle
+              id="settings-eft-enabled"
+              label="Enable EFT as invoice payment method"
+              checked={values.eftEnabled}
+              onChange={(event) => updateField('eftEnabled', event.target.checked)}
+            />
+            <Toggle
+              id="settings-eft-public-submission"
+              label="Enable public proof-of-payment submissions"
+              checked={values.eftPublicSubmissionEnabled}
+              onChange={(event) => updateField('eftPublicSubmissionEnabled', event.target.checked)}
+            />
+            <Toggle
+              id="settings-eft-include-link"
+              label="Include proof submission link in invoice emails"
+              checked={values.eftIncludePublicSubmissionLinkInEmail}
+              onChange={(event) => updateField('eftIncludePublicSubmissionLinkInEmail', event.target.checked)}
+            />
+            <Input
+              label="Bank Name"
+              value={values.eftBankName}
+              onChange={(event) => updateField('eftBankName', event.target.value)}
+            />
+            <Input
+              label="Account Holder"
+              value={values.eftAccountHolder}
+              onChange={(event) => updateField('eftAccountHolder', event.target.value)}
+            />
+            <Input
+              label="Account Number"
+              value={values.eftAccountNumber}
+              onChange={(event) => updateField('eftAccountNumber', event.target.value)}
+            />
+            <Input
+              label="Branch Code"
+              value={values.eftBranchCode}
+              onChange={(event) => updateField('eftBranchCode', event.target.value)}
+            />
+            <Input
+              label="Account Type"
+              value={values.eftAccountType}
+              onChange={(event) => updateField('eftAccountType', event.target.value)}
+            />
+            <Input
+              label="SWIFT / BIC (Optional)"
+              value={values.eftSwiftBic ?? ''}
+              onChange={(event) => updateField('eftSwiftBic', event.target.value)}
+            />
+            <Input
+              label="Payment Reference Instruction"
+              value={values.eftReferenceInstruction}
+              onChange={(event) => updateField('eftReferenceInstruction', event.target.value)}
+              helperText="Use {{invoice_number}} to include the invoice number in instruction text."
+            />
+            <Input
+              label="Allowed POP File Types"
+              value={values.eftProofAllowedMimeTypes.join(', ')}
+              onChange={(event) =>
+                updateField(
+                  'eftProofAllowedMimeTypes',
+                  event.target.value
+                    .split(',')
+                    .map((entry) => entry.trim().toLowerCase())
+                    .filter(Boolean),
+                )
+              }
+              helperText="Comma-separated MIME types, e.g. application/pdf, image/jpeg, image/png"
+            />
+            <Input
+              label="Maximum POP File Size (MB)"
+              type="number"
+              min={1}
+              value={String(Math.max(1, Math.round(values.eftProofMaxFileSizeBytes / 1024 / 1024)))}
+              onChange={(event) => {
+                const mb = Number(event.target.value);
+                if (!Number.isFinite(mb)) return;
+                updateField('eftProofMaxFileSizeBytes', Math.max(1, Math.round(mb)) * 1024 * 1024);
+              }}
+            />
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Textarea
+              label="EFT Instruction Notes"
+              value={values.eftInstructionNotes}
+              onChange={(event) => updateField('eftInstructionNotes', event.target.value)}
             />
           </div>
         </Card>

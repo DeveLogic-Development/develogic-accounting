@@ -1,6 +1,11 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { appConfig } from '@/config/appConfig';
 import { Invoice, Quote } from '@/modules/accounting/domain/types';
+import {
+  buildEftInstructionLines,
+  buildInvoicePaymentReference,
+  buildInvoicePaymentSubmissionUrl,
+} from '@/modules/accounting/domain/eft';
 import { calculateDocumentTotals } from '@/modules/accounting/domain/calculations';
 import { useAccountingContext } from '@/modules/accounting/state/AccountingContext';
 import { usePdfArchiveContext } from '@/modules/pdf/state/PdfArchiveContext';
@@ -122,6 +127,9 @@ function buildDefaultDraftFromInvoice(input: {
   client?: { name: string; email?: string };
   latestImmutablePdfId?: string;
   businessName: string;
+  paymentReferenceInstruction: string;
+  eftInstructionNotes: string;
+  proofSubmissionUrl?: string;
 }): EmailComposeDraft {
   const invoice = input.invoice;
   const totals = calculateDocumentTotals(invoice.items, invoice.documentDiscountPercent);
@@ -133,6 +141,9 @@ function buildDefaultDraftFromInvoice(input: {
     issueDate: invoice.issueDate,
     dueDate: invoice.dueDate,
     totalFormatted: formatMinorCurrency(totals.totalMinor, invoice.currencyCode),
+    paymentReferenceInstruction: input.paymentReferenceInstruction,
+    eftInstructionNotes: input.eftInstructionNotes,
+    proofSubmissionUrl: input.proofSubmissionUrl,
   };
 
   const templateKind: EmailTemplateKind = 'invoice_send';
@@ -328,14 +339,45 @@ export function EmailsProvider({ children }: { children: ReactNode }) {
 
       const invoice = accounting.getInvoiceById(documentId);
       if (!invoice) return { ok: false, error: 'Invoice not found.' };
+      const client = masterData.getClientById(invoice.clientId);
+      const clientName = client?.name ?? invoice.clientId;
+
+      const ensuredPaymentLink = businessSettings.eftPublicSubmissionEnabled
+        ? accounting.ensureInvoicePublicPaymentLink(invoice.id, {
+            clientName,
+          })
+        : undefined;
+      const invoiceForEmail = ensuredPaymentLink?.ok
+        ? accounting.getInvoiceById(invoice.id) ?? invoice
+        : invoice;
+
+      const paymentReference = invoiceForEmail.eftPaymentReference ?? buildInvoicePaymentReference({
+        invoiceNumber: invoiceForEmail.invoiceNumber,
+        clientName,
+        instructionTemplate: businessSettings.eftReferenceInstruction,
+      });
+      const eftInstructionLines = buildEftInstructionLines({
+        invoiceNumber: invoiceForEmail.invoiceNumber,
+        clientName,
+        settings: businessSettings,
+      });
+      const baseUrl =
+        appConfig.app.baseUrl ||
+        (typeof window !== 'undefined' ? window.location.origin : undefined);
+      const proofSubmissionUrl = businessSettings.eftIncludePublicSubmissionLinkInEmail
+        ? buildInvoicePaymentSubmissionUrl(baseUrl, invoiceForEmail.publicPaymentToken)
+        : '';
 
       return {
         ok: true,
         data: buildDefaultDraftFromInvoice({
-          invoice,
-          client: masterData.getClientById(invoice.clientId),
+          invoice: invoiceForEmail,
+          client,
           latestImmutablePdfId: latestImmutable?.id,
           businessName: businessSettings.businessName,
+          paymentReferenceInstruction: paymentReference,
+          eftInstructionNotes: eftInstructionLines.join('\n'),
+          proofSubmissionUrl,
         }),
       };
     },

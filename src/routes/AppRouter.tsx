@@ -18,6 +18,8 @@ import { InvoicesListPage } from '@/modules/invoices/InvoicesListPage';
 import { InvoiceDetailPage } from '@/modules/invoices/InvoiceDetailPage';
 import { InvoiceFormPage } from '@/modules/invoices/InvoiceFormPage';
 import { RecurringInvoicesPage } from '@/modules/invoices/RecurringInvoicesPage';
+import { InvoicePaymentSubmissionsPage } from '@/modules/invoices/InvoicePaymentSubmissionsPage';
+import { PublicInvoicePaymentSubmissionPage } from '@/modules/invoices/PublicInvoicePaymentSubmissionPage';
 import { TemplateLibraryPage } from '@/modules/templates/TemplateLibraryPage';
 import { TemplateEditorPage } from '@/modules/templates/TemplateEditorPage';
 import { BusinessSettingsPage } from '@/modules/settings/BusinessSettingsPage';
@@ -25,12 +27,27 @@ import { TaxSettingsPage } from '@/modules/settings/TaxSettingsPage';
 import { EmailHistoryPage } from '@/modules/emails/EmailHistoryPage';
 import { PdfArchivePage } from '@/modules/pdf-archive/PdfArchivePage';
 import { NotificationsPage } from '@/modules/notifications/NotificationsPage';
+import { NotificationsProvider } from '@/modules/notifications/state/NotificationsContext';
+import { BusinessSettingsBootstrapper } from '@/modules/settings/components/BusinessSettingsBootstrapper';
+import { AccountingProvider } from '@/modules/accounting/state/AccountingContext';
+
+function PublicInvoicePaymentRoute() {
+  return (
+    <NotificationsProvider>
+      <BusinessSettingsBootstrapper />
+      <AccountingProvider>
+        <PublicInvoicePaymentSubmissionPage />
+      </AccountingProvider>
+    </NotificationsProvider>
+  );
+}
 
 export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/pay/invoice/:token" element={<PublicInvoicePaymentRoute />} />
 
         <Route element={<RequireAuth />}>
           <Route path="/" element={<AuthenticatedAppShell />}>
@@ -61,6 +78,7 @@ export function AppRouter() {
             <Route path="invoices" element={<InvoicesListPage />} />
             <Route path="invoices/new" element={<InvoiceFormPage />} />
             <Route path="invoices/recurring" element={<RecurringInvoicesPage />} />
+            <Route path="invoices/payment-submissions" element={<InvoicePaymentSubmissionsPage />} />
             <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
             <Route path="invoices/:invoiceId/edit" element={<InvoiceFormPage />} />
 

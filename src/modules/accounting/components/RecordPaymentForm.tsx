@@ -6,6 +6,7 @@ import { Textarea } from '@/design-system/primitives/Textarea';
 import { InlineNotice } from '@/design-system/patterns/InlineNotice';
 import { PaymentInput } from '../domain/types';
 import { todayIsoDate } from '../domain/date';
+import { toSanitizedDecimalNumber } from '@/utils/numeric-input';
 
 interface RecordPaymentFormProps {
   onSubmit: (payload: PaymentInput) => { ok: boolean; error?: string };
@@ -46,11 +47,10 @@ export function RecordPaymentForm({ onSubmit, onCancel }: RecordPaymentFormProps
     <form style={{ display: 'grid', gap: 12 }} onSubmit={handleSubmit}>
       <Input
         label="Amount"
-        type="number"
-        min={0}
-        step="0.01"
+        type="text"
+        inputMode="decimal"
         value={amount}
-        onChange={(event) => setAmount(Number(event.target.value))}
+        onChange={(event) => setAmount(toSanitizedDecimalNumber(event.target.value))}
       />
       <Input
         label="Payment Date"

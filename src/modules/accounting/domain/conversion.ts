@@ -1,4 +1,5 @@
 import { Invoice, Quote } from './types';
+import { buildInvoicePaymentReference, createInvoicePublicPaymentToken } from './eft';
 
 export function convertQuoteToInvoice(input: {
   quote: Quote;
@@ -42,6 +43,12 @@ export function convertQuoteToInvoice(input: {
       : '',
     internalMemo: quote.internalMemo,
     recipientEmails: quote.recipientEmails ?? [],
+    eftPaymentReference: buildInvoicePaymentReference({
+      invoiceNumber,
+      clientName: quote.clientId,
+    }),
+    publicPaymentToken: createInvoicePublicPaymentToken(),
+    publicPaymentEnabled: true,
     billingAddressSnapshot: carryAddresses ? quote.billingAddressSnapshot : undefined,
     shippingAddressSnapshot: carryAddresses ? quote.shippingAddressSnapshot : undefined,
     attachments: [],

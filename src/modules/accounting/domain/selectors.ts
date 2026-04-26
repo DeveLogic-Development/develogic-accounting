@@ -1,5 +1,6 @@
 import { AccountingState, Invoice, InvoiceSummary, Quote, QuoteSummary } from './types';
 import { calculateDocumentTotals, deriveInvoicePaymentSummary } from './calculations';
+import { deriveInvoicePaymentSubmissionState } from './eft';
 
 export function selectQuoteSummaries(state: AccountingState): QuoteSummary[] {
   return state.quotes
@@ -32,6 +33,14 @@ export function selectInvoiceSummaries(state: AccountingState, nowIso = new Date
         invoice.adjustmentMinor ?? 0,
       );
       const payment = deriveInvoicePaymentSummary(invoice, state.payments, nowIso);
+      const submissions = state.paymentSubmissions
+        .filter((entry) => entry.invoiceId === invoice.id)
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const pendingSubmissionCount = submissions.filter(
+        (entry) => entry.status === 'submitted' || entry.status === 'under_review',
+      ).length;
+      const latestSubmissionAt = submissions[0]?.createdAt;
 
       return {
         id: invoice.id,
@@ -46,6 +55,9 @@ export function selectInvoiceSummaries(state: AccountingState, nowIso = new Date
         outstandingMinor: payment.outstandingMinor,
         terms: invoice.terms,
         salesperson: invoice.salesperson,
+        paymentSubmissionState: deriveInvoicePaymentSubmissionState(submissions),
+        pendingSubmissionCount,
+        latestSubmissionAt,
       };
     })
     .sort((a, b) => b.issueDate.localeCompare(a.issueDate));

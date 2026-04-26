@@ -136,6 +136,9 @@ export interface EmailTemplatePayload {
   dueDate?: string;
   expiryDate?: string;
   totalFormatted: string;
+  paymentReferenceInstruction?: string;
+  eftInstructionNotes?: string;
+  proofSubmissionUrl?: string;
 }
 
 export interface EmailTemplateDefinition {

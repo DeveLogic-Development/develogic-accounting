@@ -3,6 +3,7 @@ import { Invoice, Quote } from '@/modules/accounting/domain/types';
 import { BusinessSettings, splitAddressLines } from '@/modules/settings/domain/business-settings';
 import { buildPreviewPayloadFromInvoice, buildPreviewPayloadFromQuote, buildPreviewRowsFromDomainItems } from '@/modules/templates/domain/preview-builders';
 import { DocumentTemplate, DocumentTemplateVersion } from '@/modules/templates/domain/types';
+import { buildEftInstructionLines } from '@/modules/accounting/domain/eft';
 import { DocumentRenderSnapshot, PdfDocumentType, PdfVersionContext } from './types';
 
 interface SnapshotInputBase {
@@ -98,6 +99,18 @@ export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice:
     },
   };
   const businessAddressLines = splitAddressLines(businessSettings?.address ?? '');
+  const eftInstructionLines =
+    businessSettings?.eftEnabled === false
+      ? []
+      : buildEftInstructionLines({
+          invoiceNumber: invoice.invoiceNumber,
+          clientName: client?.name ?? invoice.clientId,
+          settings: businessSettings,
+        });
+  const paymentTerms = [invoice.termsAndConditions ?? invoice.paymentTerms, ...eftInstructionLines]
+    .map((line) => line?.trim())
+    .filter(Boolean)
+    .join('\n');
 
   return {
     renderSchemaVersion: 1,
@@ -125,7 +138,7 @@ export function mapInvoiceToRenderSnapshot(input: SnapshotInputBase & { invoice:
       paidMinor: paymentSummary.paidMinor,
       outstandingMinor: paymentSummary.outstandingMinor,
       notes: invoice.notes,
-      paymentTerms: invoice.termsAndConditions ?? invoice.paymentTerms,
+      paymentTerms,
       clientName: client?.name ?? invoice.clientId,
       clientContactName: client?.contactName,
       clientEmail: client?.email,

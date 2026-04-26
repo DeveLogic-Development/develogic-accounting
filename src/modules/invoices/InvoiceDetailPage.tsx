@@ -28,7 +28,18 @@ import { useMasterData } from '@/modules/master-data/hooks/useMasterData';
 import { createDefaultTemplateConfigForType } from '@/modules/templates/domain/defaults';
 import { buildPreviewPayloadFromInvoice, buildPreviewRowsFromDomainItems } from '@/modules/templates/domain/preview-builders';
 import { TemplatePreviewRenderer } from '@/modules/templates/components/TemplatePreviewRenderer';
-import { InvoiceActivityEvent, InvoiceAttachment, StatusEvent } from '@/modules/accounting/domain/types';
+import {
+  InvoiceActivityEvent,
+  InvoiceAttachment,
+  InvoicePaymentSubmission,
+  StatusEvent,
+} from '@/modules/accounting/domain/types';
+import {
+  buildInvoicePaymentSubmissionUrl,
+  deriveInvoicePaymentSubmissionState,
+} from '@/modules/accounting/domain/eft';
+import { useBusinessSettings } from '@/modules/settings/hooks/useBusinessSettings';
+import { appConfig } from '@/config/appConfig';
 
 type DetailTab = 'invoice_details' | 'activity_logs';
 type DocumentViewMode = 'details' | 'pdf';
@@ -81,6 +92,24 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function submissionStatusLabel(status: InvoicePaymentSubmission['status']): string {
+  if (status === 'submitted') return 'Submitted';
+  if (status === 'under_review') return 'Under Review';
+  if (status === 'approved') return 'Approved';
+  if (status === 'rejected') return 'Rejected';
+  return 'Cancelled';
+}
+
+function submissionStatusTone(
+  status: InvoicePaymentSubmission['status'],
+): 'info' | 'warning' | 'success' | 'danger' | 'neutral' {
+  if (status === 'submitted') return 'info';
+  if (status === 'under_review') return 'warning';
+  if (status === 'approved') return 'success';
+  if (status === 'rejected') return 'danger';
+  return 'neutral';
+}
+
 export function InvoiceDetailPage() {
   const navigate = useNavigate();
   const { invoiceId } = useParams();
@@ -88,8 +117,11 @@ export function InvoiceDetailPage() {
     getInvoiceById,
     getInvoicePaymentSummary,
     getInvoicePayments,
+    getInvoicePaymentSubmissions,
+    ensureInvoicePublicPaymentLink,
     transitionInvoice,
     recordPayment,
+    reviewInvoicePaymentSubmission,
     duplicateInvoice,
     deleteInvoice,
     addInvoiceAttachment,
@@ -113,6 +145,7 @@ export function InvoiceDetailPage() {
     emailAvailabilityMessage,
   } = useEmails();
   const { getClientById } = useMasterData();
+  const businessSettings = useBusinessSettings();
 
   const [activeTab, setActiveTab] = useState<DetailTab>('invoice_details');
   const [viewMode, setViewMode] = useState<DocumentViewMode>('pdf');
@@ -210,6 +243,11 @@ export function InvoiceDetailPage() {
   const paidMinor = paymentSummary?.paidMinor ?? 0;
   const outstandingMinor = paymentSummary?.outstandingMinor ?? totals.totalMinor;
   const payments = getInvoicePayments(invoice.id);
+  const paymentSubmissions = getInvoicePaymentSubmissions(invoice.id);
+  const paymentSubmissionState = deriveInvoicePaymentSubmissionState(paymentSubmissions);
+  const pendingSubmissions = paymentSubmissions.filter(
+    (entry) => entry.status === 'submitted' || entry.status === 'under_review',
+  );
 
   const client = getClientById(invoice.clientId);
   const template = getTemplateById(invoice.templateId ?? '');
@@ -221,6 +259,8 @@ export function InvoiceDetailPage() {
   const latestDraftPdf = pdfRecords.find((record) => !record.immutable);
   const emailLogs = getLogsForDocument({ documentType: 'invoice', documentId: invoice.id });
   const recentEmailLogs = emailLogs.slice(0, 3);
+  const baseUrl = appConfig.app.baseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+  const publicSubmissionUrl = buildInvoicePaymentSubmissionUrl(baseUrl, invoice.publicPaymentToken);
   const sendDisabledReason = emailCapabilityLoading
     ? 'Checking email capability...'
     : !canSendEmails
@@ -268,6 +308,15 @@ export function InvoiceDetailPage() {
   }, [emailLogs, invoice.activityLog, invoice.statusHistory, pdfRecords]);
 
   const previewConfig = templateVersion?.config ?? createDefaultTemplateConfigForType('invoice');
+  const invoicePaymentTermsForPreview = [
+    invoice.termsAndConditions ?? invoice.paymentTerms,
+    businessSettings.eftEnabled
+      ? `EFT Reference: ${invoice.eftPaymentReference || invoice.invoiceNumber}`
+      : '',
+    businessSettings.eftInstructionNotes,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   const previewPayload = buildPreviewPayloadFromInvoice({
     invoiceNumber: invoice.invoiceNumber,
     issueDate: invoice.issueDate,
@@ -277,7 +326,7 @@ export function InvoiceDetailPage() {
     paidMinor,
     outstandingMinor,
     notes: invoice.notes,
-    paymentTerms: invoice.termsAndConditions ?? invoice.paymentTerms,
+    paymentTerms: invoicePaymentTermsForPreview,
     clientName: client?.displayName ?? invoice.clientId,
     clientContactName: client?.contactName,
     clientEmail: client?.email,
@@ -315,6 +364,64 @@ export function InvoiceDetailPage() {
 
     setNotice({ tone: 'success', text: 'Invoice marked as sent.' });
     return true;
+  };
+
+  const handleEnsurePublicPaymentLink = () => {
+    const result = ensureInvoicePublicPaymentLink(invoice.id, {
+      clientName: client?.displayName ?? invoice.clientId,
+      regenerateToken: !invoice.publicPaymentToken,
+    });
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok
+        ? 'Public proof-of-payment link is ready for this invoice.'
+        : result.error ?? 'Unable to generate public payment link.',
+    });
+  };
+
+  const handleCopyPublicSubmissionLink = async () => {
+    if (!publicSubmissionUrl) {
+      setNotice({ tone: 'warning', text: 'Public payment link is unavailable. Generate the link first.' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(publicSubmissionUrl);
+      setNotice({ tone: 'success', text: 'Public submission link copied to clipboard.' });
+    } catch {
+      setNotice({ tone: 'warning', text: `Copy failed. Use this URL manually: ${publicSubmissionUrl}` });
+    }
+  };
+
+  const handleSubmissionReviewAction = (
+    submission: InvoicePaymentSubmission,
+    status: 'under_review' | 'approved' | 'rejected',
+  ) => {
+    const result = reviewInvoicePaymentSubmission(submission.id, {
+      status,
+      reviewNotes:
+        status === 'rejected'
+          ? 'Rejected from invoice detail review.'
+          : status === 'under_review'
+            ? 'Marked under review from invoice detail.'
+            : 'Approved from invoice detail.',
+      approvedAmount: status === 'approved' ? submission.submittedAmountMinor / 100 : undefined,
+      approvedPaymentDate: status === 'approved' ? submission.submittedPaymentDate : undefined,
+      approvedPaymentReference:
+        status === 'approved'
+          ? submission.submittedReference || invoice.eftPaymentReference || invoice.invoiceNumber
+          : undefined,
+    });
+
+    setNotice({
+      tone: result.ok ? 'success' : 'error',
+      text: result.ok
+        ? status === 'approved'
+          ? 'Submission approved and payment recorded.'
+          : status === 'rejected'
+            ? 'Submission rejected.'
+            : 'Submission moved to under review.'
+        : result.error ?? 'Unable to update payment submission.',
+    });
   };
 
   const handleDuplicate = () => {
@@ -662,6 +769,18 @@ export function InvoiceDetailPage() {
       {!canSendEmails && !emailCapabilityLoading ? (
         <InlineNotice tone="warning">{sendDisabledReason}</InlineNotice>
       ) : null}
+      {paymentSubmissionState === 'submitted' || paymentSubmissionState === 'under_review' ? (
+        <InlineNotice tone={paymentSubmissionState === 'under_review' ? 'warning' : 'info'}>
+          {paymentSubmissionState === 'under_review'
+            ? 'A proof of payment is under review. Confirm or reject it from this invoice or the submissions queue.'
+            : 'A customer proof of payment was submitted and awaits finance review.'}
+          <span className="dl-inline-actions" style={{ marginLeft: 8 }}>
+            <Link to={`/invoices/payment-submissions?invoiceId=${invoice.id}`}>
+              <Button size="sm" variant="secondary">Open Submission Queue</Button>
+            </Link>
+          </span>
+        </InlineNotice>
+      ) : null}
 
       {invoice.status === 'draft' ? (
         <InlineNotice tone="info">
@@ -766,12 +885,13 @@ export function InvoiceDetailPage() {
                     <div><strong>Salesperson:</strong> {invoice.salesperson || '—'}</div>
                     <div><strong>Subject:</strong> {invoice.subject || '—'}</div>
                   </div>
-                  <div className="dl-meta-grid">
-                    <div><strong>Status:</strong> <InvoiceStatusBadge status={invoice.status} /></div>
-                    <div><strong>Total Amount:</strong> {formatMinorCurrency(totals.totalMinor, invoice.currencyCode)}</div>
-                    <div><strong>Paid Amount:</strong> {formatMinorCurrency(paidMinor, invoice.currencyCode)}</div>
-                    <div><strong>Balance Due:</strong> {formatMinorCurrency(outstandingMinor, invoice.currencyCode)}</div>
-                    <div><strong>Template:</strong> {invoice.templateName ?? template?.name ?? 'Not assigned'}</div>
+                    <div className="dl-meta-grid">
+                      <div><strong>Status:</strong> <InvoiceStatusBadge status={invoice.status} /></div>
+                      <div><strong>Total Amount:</strong> {formatMinorCurrency(totals.totalMinor, invoice.currencyCode)}</div>
+                      <div><strong>Paid Amount:</strong> {formatMinorCurrency(paidMinor, invoice.currencyCode)}</div>
+                      <div><strong>Balance Due:</strong> {formatMinorCurrency(outstandingMinor, invoice.currencyCode)}</div>
+                      <div><strong>EFT Reference:</strong> {invoice.eftPaymentReference || invoice.invoiceNumber}</div>
+                      <div><strong>Template:</strong> {invoice.templateName ?? template?.name ?? 'Not assigned'}</div>
                     <div><strong>Template Version:</strong> {templateVersion ? `v${templateVersion.versionNumber}` : 'Not assigned'}</div>
                     <div><strong>Source Quote:</strong> {invoice.sourceQuoteId ?? '—'}</div>
                     <div><strong>Creation Date:</strong> {formatDate(invoice.createdAt)}</div>
@@ -816,6 +936,121 @@ export function InvoiceDetailPage() {
                     </div>
                   </Card>
                 </div>
+
+                <Card
+                  title="EFT Payment Workflow"
+                  subtitle={
+                    pendingSubmissions.length > 0
+                      ? `${pendingSubmissions.length} submission(s) pending review`
+                      : 'Manual EFT payment instructions and proof-of-payment tracking'
+                  }
+                >
+                  <div className="dl-grid cols-2">
+                    <div className="dl-meta-grid">
+                      <div><strong>Bank:</strong> {businessSettings.eftBankName}</div>
+                      <div><strong>Account Holder:</strong> {businessSettings.eftAccountHolder}</div>
+                      <div><strong>Account Number:</strong> {businessSettings.eftAccountNumber}</div>
+                      <div><strong>Branch Code:</strong> {businessSettings.eftBranchCode}</div>
+                      <div><strong>Account Type:</strong> {businessSettings.eftAccountType}</div>
+                      {businessSettings.eftSwiftBic ? (
+                        <div><strong>SWIFT/BIC:</strong> {businessSettings.eftSwiftBic}</div>
+                      ) : null}
+                      <div><strong>Invoice Reference:</strong> {invoice.eftPaymentReference || invoice.invoiceNumber}</div>
+                    </div>
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <div className="dl-meta-grid">
+                        <div><strong>Public Submission Link:</strong></div>
+                        <div className="dl-muted" style={{ wordBreak: 'break-word', fontSize: 12 }}>
+                          {publicSubmissionUrl || 'Not generated yet'}
+                        </div>
+                        <div><strong>Submission State:</strong> {paymentSubmissionState.replace('_', ' ')}</div>
+                      </div>
+                      <div className="dl-inline-actions">
+                        <Button size="sm" variant="secondary" onClick={handleEnsurePublicPaymentLink}>
+                          {invoice.publicPaymentToken ? 'Refresh Public Link' : 'Generate Public Link'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void handleCopyPublicSubmissionLink()}
+                          disabled={!publicSubmissionUrl}
+                        >
+                          Copy Link
+                        </Button>
+                        {publicSubmissionUrl ? (
+                          <a href={publicSubmissionUrl} target="_blank" rel="noreferrer">
+                            <Button size="sm" variant="ghost">Open Public Page</Button>
+                          </a>
+                        ) : null}
+                        <Link to={`/invoices/payment-submissions?invoiceId=${invoice.id}`}>
+                          <Button size="sm">Review Queue</Button>
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="dl-divider" />
+
+                  {paymentSubmissions.length === 0 ? (
+                    <p className="dl-muted" style={{ margin: 0 }}>
+                      No proof-of-payment submissions have been received for this invoice.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {paymentSubmissions.slice(0, 5).map((submission) => (
+                        <div key={submission.id} className="dl-card-list-item">
+                          <div className="dl-responsive-split-row">
+                            <div>
+                              <strong>
+                                {formatMinorCurrency(submission.submittedAmountMinor, invoice.currencyCode)} ·{' '}
+                                {formatDate(submission.submittedPaymentDate)}
+                              </strong>
+                              <div className="dl-muted" style={{ fontSize: 12 }}>
+                                {submission.payerName || 'Payer not provided'}
+                                {submission.submittedReference ? ` · Ref: ${submission.submittedReference}` : ''}
+                              </div>
+                            </div>
+                            <span className={`dl-badge ${submissionStatusTone(submission.status)}`}>
+                              {submissionStatusLabel(submission.status)}
+                            </span>
+                          </div>
+                          {submission.note ? (
+                            <div className="dl-muted" style={{ marginTop: 6, fontSize: 12 }}>
+                              {submission.note}
+                            </div>
+                          ) : null}
+                          {submission.status === 'submitted' || submission.status === 'under_review' ? (
+                            <div className="dl-inline-actions" style={{ marginTop: 8 }}>
+                              {submission.status === 'submitted' ? (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleSubmissionReviewAction(submission, 'under_review')}
+                                >
+                                  Mark Under Review
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={() => handleSubmissionReviewAction(submission, 'approved')}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleSubmissionReviewAction(submission, 'rejected')}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
 
                 <Card title="Customer Notes">
                   <p style={{ margin: 0 }}>{invoice.notes || 'No notes added.'}</p>

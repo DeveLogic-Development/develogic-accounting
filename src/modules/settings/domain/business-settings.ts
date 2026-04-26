@@ -17,6 +17,19 @@ export interface BusinessSettings {
   senderEmail: string;
   replyTo: string;
   signatureName: string;
+  eftEnabled: boolean;
+  eftBankName: string;
+  eftAccountHolder: string;
+  eftAccountNumber: string;
+  eftBranchCode: string;
+  eftAccountType: string;
+  eftSwiftBic?: string;
+  eftReferenceInstruction: string;
+  eftInstructionNotes: string;
+  eftProofAllowedMimeTypes: string[];
+  eftProofMaxFileSizeBytes: number;
+  eftPublicSubmissionEnabled: boolean;
+  eftIncludePublicSubmissionLinkInEmail: boolean;
 }
 
 export const BUSINESS_SETTINGS_STORAGE_KEY = 'develogic_business_settings_v1';
@@ -38,6 +51,20 @@ export const defaultBusinessSettings: BusinessSettings = {
   senderEmail: 'billing@develogic.digital',
   replyTo: 'accounts@develogic.digital',
   signatureName: 'Finance Team',
+  eftEnabled: true,
+  eftBankName: 'Standard Bank',
+  eftAccountHolder: 'DeveLogic Digital (Pty) Ltd',
+  eftAccountNumber: '0123456789',
+  eftBranchCode: '051001',
+  eftAccountType: 'Business Current',
+  eftSwiftBic: '',
+  eftReferenceInstruction: 'Use {{invoice_number}} as your payment reference.',
+  eftInstructionNotes:
+    'Once payment is made, submit your proof of payment using the secure link in the invoice email for confirmation.',
+  eftProofAllowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png'],
+  eftProofMaxFileSizeBytes: 10 * 1024 * 1024,
+  eftPublicSubmissionEnabled: true,
+  eftIncludePublicSubmissionLinkInEmail: true,
 };
 
 export function normalizeHexColor(value: string): string | null {
@@ -104,6 +131,14 @@ export function loadBusinessSettings(): BusinessSettings {
     return {
       ...defaultBusinessSettings,
       ...parsed,
+      eftProofAllowedMimeTypes:
+        Array.isArray(parsed.eftProofAllowedMimeTypes) && parsed.eftProofAllowedMimeTypes.length > 0
+          ? parsed.eftProofAllowedMimeTypes
+          : defaultBusinessSettings.eftProofAllowedMimeTypes,
+      eftProofMaxFileSizeBytes:
+        typeof parsed.eftProofMaxFileSizeBytes === 'number' && Number.isFinite(parsed.eftProofMaxFileSizeBytes)
+          ? parsed.eftProofMaxFileSizeBytes
+          : defaultBusinessSettings.eftProofMaxFileSizeBytes,
       brandColor: normalizedBrand,
     };
   } catch {

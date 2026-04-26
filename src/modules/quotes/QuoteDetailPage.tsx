@@ -34,6 +34,32 @@ const DETAIL_TABS: Array<{ key: DetailTab; label: string }> = [
   { key: 'activity_logs', label: 'Activity Logs' },
 ];
 
+const DEFAULT_CONVERSION_PREFERENCES: QuoteConversionPreferences = {
+  carryCustomerNotes: true,
+  carryTermsAndConditions: true,
+  carryAddresses: true,
+};
+
+function normalizeConversionPreferences(
+  input?: Partial<QuoteConversionPreferences>,
+): QuoteConversionPreferences {
+  return {
+    ...DEFAULT_CONVERSION_PREFERENCES,
+    ...(input ?? {}),
+  };
+}
+
+function areConversionPreferencesEqual(
+  a: QuoteConversionPreferences,
+  b: QuoteConversionPreferences,
+): boolean {
+  return (
+    a.carryCustomerNotes === b.carryCustomerNotes &&
+    a.carryTermsAndConditions === b.carryTermsAndConditions &&
+    a.carryAddresses === b.carryAddresses
+  );
+}
+
 function mapStatusHistoryToActivity(entries: StatusEvent<string>[]): QuoteActivityEvent[] {
   return entries.map((entry) => ({
     id: `status_${entry.id}`,
@@ -114,11 +140,9 @@ export function QuoteDetailPage() {
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
   );
-  const [conversionPrefsDraft, setConversionPrefsDraft] = useState<QuoteConversionPreferences>({
-    carryCustomerNotes: true,
-    carryTermsAndConditions: true,
-    carryAddresses: true,
-  });
+  const [conversionPrefsDraft, setConversionPrefsDraft] = useState<QuoteConversionPreferences>(
+    DEFAULT_CONVERSION_PREFERENCES,
+  );
 
   const moreMenuRootRef = useRef<HTMLDivElement | null>(null);
   const moreMenuPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -127,14 +151,16 @@ export function QuoteDetailPage() {
 
   useEffect(() => {
     if (!quote) return;
-    setConversionPrefsDraft(
-      quote.conversionPreferences ?? {
-        carryCustomerNotes: true,
-        carryTermsAndConditions: true,
-        carryAddresses: true,
-      },
+    const nextPreferences = normalizeConversionPreferences(quote.conversionPreferences);
+    setConversionPrefsDraft((previous) =>
+      areConversionPreferencesEqual(previous, nextPreferences) ? previous : nextPreferences,
     );
-  }, [quote]);
+  }, [
+    quote?.id,
+    quote?.conversionPreferences?.carryCustomerNotes,
+    quote?.conversionPreferences?.carryTermsAndConditions,
+    quote?.conversionPreferences?.carryAddresses,
+  ]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
