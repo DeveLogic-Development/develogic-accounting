@@ -39,6 +39,8 @@ const DEFAULT_CONVERSION_PREFERENCES: QuoteConversionPreferences = {
   carryTermsAndConditions: true,
   carryAddresses: true,
 };
+const MAX_ATTACHMENTS_PER_QUOTE = 5;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
 function normalizeConversionPreferences(
   input?: Partial<QuoteConversionPreferences>,
@@ -146,6 +148,7 @@ export function QuoteDetailPage() {
 
   const moreMenuRootRef = useRef<HTMLDivElement | null>(null);
   const moreMenuPopoverRef = useRef<HTMLDivElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const quote = quoteId ? getQuoteById(quoteId) : undefined;
 
@@ -458,6 +461,26 @@ export function QuoteDetailPage() {
   const handleAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     if (files.length === 0) return;
+
+    const existingCount = quote.attachments?.length ?? 0;
+    if (existingCount + files.length > MAX_ATTACHMENTS_PER_QUOTE) {
+      setNotice({
+        tone: 'warning',
+        text: `You can attach up to ${MAX_ATTACHMENTS_PER_QUOTE} files per quote.`,
+      });
+      event.target.value = '';
+      return;
+    }
+
+    const oversizedFile = files.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
+    if (oversizedFile) {
+      setNotice({
+        tone: 'warning',
+        text: `${oversizedFile.name} exceeds the 10MB attachment limit.`,
+      });
+      event.target.value = '';
+      return;
+    }
 
     setIsUploadingAttachment(true);
     try {
@@ -843,18 +866,21 @@ export function QuoteDetailPage() {
         <RightSidePanel title="Attachments" onClose={() => setAttachmentsOpen(false)}>
           <div className="dl-inline-actions">
             <input
+              ref={attachmentInputRef}
               type="file"
-              id="quote-detail-attachments"
               multiple
               style={{ display: 'none' }}
               onChange={(event) => void handleAttachmentUpload(event)}
               disabled={isUploadingAttachment}
             />
-            <label htmlFor="quote-detail-attachments">
-              <Button size="sm" variant="secondary" disabled={isUploadingAttachment}>
-                {isUploadingAttachment ? 'Uploading...' : 'Upload Files'}
-              </Button>
-            </label>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => attachmentInputRef.current?.click()}
+              disabled={isUploadingAttachment}
+            >
+              {isUploadingAttachment ? 'Uploading...' : 'Upload Files'}
+            </Button>
             <span className="dl-muted" style={{ fontSize: 12 }}>Maximum 5 files, 10MB each.</span>
           </div>
 

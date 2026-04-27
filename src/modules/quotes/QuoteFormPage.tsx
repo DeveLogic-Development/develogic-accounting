@@ -27,6 +27,8 @@ import { formatDate } from '@/utils/format';
 import { toSanitizedDecimalNumber } from '@/utils/numeric-input';
 
 type QuoteFormTab = 'details' | 'items' | 'notes' | 'attachments';
+const MAX_ATTACHMENTS_PER_QUOTE = 10;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
 const FORM_TABS: Array<{ key: QuoteFormTab; label: string }> = [
   { key: 'details', label: 'Quote Details' },
@@ -126,6 +128,7 @@ export function QuoteFormPage() {
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [catalogSelectionId, setCatalogSelectionId] = useState('');
   const hydratedVersionRef = useRef<string | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const templateAssignments = useMemo(
     () => getTemplateAssignmentsForDocument('quote'),
@@ -409,6 +412,26 @@ export function QuoteFormPage() {
     const files = event.target.files ? Array.from(event.target.files) : [];
     if (files.length === 0) return;
 
+    const existingCount = values.attachments?.length ?? 0;
+    if (existingCount + files.length > MAX_ATTACHMENTS_PER_QUOTE) {
+      setNotice({
+        tone: 'warning',
+        text: `You can attach up to ${MAX_ATTACHMENTS_PER_QUOTE} files per quote.`,
+      });
+      event.target.value = '';
+      return;
+    }
+
+    const oversizedFile = files.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
+    if (oversizedFile) {
+      setNotice({
+        tone: 'warning',
+        text: `${oversizedFile.name} exceeds the 10MB attachment limit.`,
+      });
+      event.target.value = '';
+      return;
+    }
+
     setIsUploadingAttachments(true);
     try {
       const mappedAttachments = await Promise.all(
@@ -674,24 +697,23 @@ export function QuoteFormPage() {
             <Card title="Quote Attachments" subtitle="Attachments are linked to this quote and visible in detail view">
               <div className="dl-inline-actions" style={{ marginBottom: 12 }}>
                 <input
+                  ref={attachmentInputRef}
                   type="file"
-                  id="quote-attachments-upload"
                   multiple
                   onChange={(event) => void handleAttachmentUpload(event)}
                   disabled={!editable || isUploadingAttachments}
                   style={{ display: 'none' }}
                 />
-                <label htmlFor="quote-attachments-upload">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={!editable || isUploadingAttachments}
-                  >
-                    {isUploadingAttachments ? 'Uploading...' : 'Upload Files'}
-                  </Button>
-                </label>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  disabled={!editable || isUploadingAttachments}
+                >
+                  {isUploadingAttachments ? 'Uploading...' : 'Upload Files'}
+                </Button>
                 <span className="dl-muted" style={{ fontSize: 12 }}>
-                  Up to 10 files, 10MB each recommended.
+                  Up to 10 files, 10MB each.
                 </span>
               </div>
               {(values.attachments ?? []).length === 0 ? (
