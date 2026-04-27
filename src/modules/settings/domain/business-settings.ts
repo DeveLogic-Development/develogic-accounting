@@ -67,6 +67,87 @@ export const defaultBusinessSettings: BusinessSettings = {
   eftIncludePublicSubmissionLinkInEmail: true,
 };
 
+function readString(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeMimeTypes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+}
+
+export function normalizeBusinessSettings(
+  input: Partial<BusinessSettings> | null | undefined,
+): BusinessSettings {
+  const source = input ?? {};
+  const normalizedBrand = normalizeHexColor(readString(source.brandColor, '')) ?? defaultBusinessSettings.brandColor;
+  const normalizedMimeTypes = normalizeMimeTypes(source.eftProofAllowedMimeTypes);
+  const maxFileSize = source.eftProofMaxFileSizeBytes;
+  const normalizedMaxFileSize =
+    typeof maxFileSize === 'number' && Number.isFinite(maxFileSize) && maxFileSize > 0
+      ? Math.round(maxFileSize)
+      : defaultBusinessSettings.eftProofMaxFileSizeBytes;
+
+  return {
+    ...defaultBusinessSettings,
+    ...source,
+    businessName: readString(source.businessName, defaultBusinessSettings.businessName),
+    registrationNumber: readString(source.registrationNumber, defaultBusinessSettings.registrationNumber),
+    vatNumber: readString(source.vatNumber, defaultBusinessSettings.vatNumber),
+    email: readString(source.email, defaultBusinessSettings.email),
+    phone: readString(source.phone, defaultBusinessSettings.phone),
+    website: readString(source.website, defaultBusinessSettings.website),
+    currency: readString(source.currency, defaultBusinessSettings.currency),
+    timezone: readString(source.timezone, defaultBusinessSettings.timezone),
+    address: readString(source.address, defaultBusinessSettings.address),
+    fontFamily: readString(source.fontFamily, defaultBusinessSettings.fontFamily),
+    brandColor: normalizedBrand,
+    logoDataUrl: readOptionalString(source.logoDataUrl),
+    logoFileName: readOptionalString(source.logoFileName),
+    logoAssetId: readOptionalString(source.logoAssetId),
+    senderName: readString(source.senderName, defaultBusinessSettings.senderName),
+    senderEmail: readString(source.senderEmail, defaultBusinessSettings.senderEmail),
+    replyTo: readString(source.replyTo, defaultBusinessSettings.replyTo),
+    signatureName: readString(source.signatureName, defaultBusinessSettings.signatureName),
+    eftEnabled: readBoolean(source.eftEnabled, defaultBusinessSettings.eftEnabled),
+    eftBankName: readString(source.eftBankName, defaultBusinessSettings.eftBankName),
+    eftAccountHolder: readString(source.eftAccountHolder, defaultBusinessSettings.eftAccountHolder),
+    eftAccountNumber: readString(source.eftAccountNumber, defaultBusinessSettings.eftAccountNumber),
+    eftBranchCode: readString(source.eftBranchCode, defaultBusinessSettings.eftBranchCode),
+    eftAccountType: readString(source.eftAccountType, defaultBusinessSettings.eftAccountType),
+    eftSwiftBic: readString(source.eftSwiftBic, defaultBusinessSettings.eftSwiftBic ?? ''),
+    eftReferenceInstruction: readString(
+      source.eftReferenceInstruction,
+      defaultBusinessSettings.eftReferenceInstruction,
+    ),
+    eftInstructionNotes: readString(source.eftInstructionNotes, defaultBusinessSettings.eftInstructionNotes),
+    eftProofAllowedMimeTypes:
+      normalizedMimeTypes.length > 0
+        ? normalizedMimeTypes
+        : [...defaultBusinessSettings.eftProofAllowedMimeTypes],
+    eftProofMaxFileSizeBytes: normalizedMaxFileSize,
+    eftPublicSubmissionEnabled: readBoolean(
+      source.eftPublicSubmissionEnabled,
+      defaultBusinessSettings.eftPublicSubmissionEnabled,
+    ),
+    eftIncludePublicSubmissionLinkInEmail: readBoolean(
+      source.eftIncludePublicSubmissionLinkInEmail,
+      defaultBusinessSettings.eftIncludePublicSubmissionLinkInEmail,
+    ),
+  };
+}
+
 export function normalizeHexColor(value: string): string | null {
   const trimmed = value.trim();
   const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
@@ -119,39 +200,22 @@ function mixHexColors(a: string, b: string, weight: number): string {
 }
 
 export function loadBusinessSettings(): BusinessSettings {
-  if (typeof window === 'undefined') return defaultBusinessSettings;
+  if (typeof window === 'undefined') return normalizeBusinessSettings(undefined);
 
   const raw = window.localStorage.getItem(BUSINESS_SETTINGS_STORAGE_KEY);
-  if (!raw) return defaultBusinessSettings;
+  if (!raw) return normalizeBusinessSettings(undefined);
 
   try {
     const parsed = JSON.parse(raw) as Partial<BusinessSettings>;
-    const normalizedBrand = normalizeHexColor(parsed.brandColor ?? '') ?? defaultBusinessSettings.brandColor;
-
-    return {
-      ...defaultBusinessSettings,
-      ...parsed,
-      eftProofAllowedMimeTypes:
-        Array.isArray(parsed.eftProofAllowedMimeTypes) && parsed.eftProofAllowedMimeTypes.length > 0
-          ? parsed.eftProofAllowedMimeTypes
-          : defaultBusinessSettings.eftProofAllowedMimeTypes,
-      eftProofMaxFileSizeBytes:
-        typeof parsed.eftProofMaxFileSizeBytes === 'number' && Number.isFinite(parsed.eftProofMaxFileSizeBytes)
-          ? parsed.eftProofMaxFileSizeBytes
-          : defaultBusinessSettings.eftProofMaxFileSizeBytes,
-      brandColor: normalizedBrand,
-    };
+    return normalizeBusinessSettings(parsed);
   } catch {
-    return defaultBusinessSettings;
+    return normalizeBusinessSettings(undefined);
   }
 }
 
 export function saveBusinessSettings(settings: BusinessSettings): void {
   if (typeof window === 'undefined') return;
-  const normalized = {
-    ...settings,
-    brandColor: normalizeHexColor(settings.brandColor) ?? defaultBusinessSettings.brandColor,
-  };
+  const normalized = normalizeBusinessSettings(settings);
   window.localStorage.setItem(BUSINESS_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
   window.dispatchEvent(new CustomEvent(BUSINESS_SETTINGS_UPDATED_EVENT, { detail: normalized }));
 }
@@ -176,8 +240,8 @@ export function subscribeBusinessSettings(onChange: (settings: BusinessSettings)
   if (typeof window === 'undefined') return () => undefined;
 
   const handleCustomEvent = (event: Event) => {
-    const detail = (event as CustomEvent<BusinessSettings>).detail;
-    onChange(detail ?? loadBusinessSettings());
+    const detail = (event as CustomEvent<Partial<BusinessSettings>>).detail;
+    onChange(normalizeBusinessSettings(detail ?? loadBusinessSettings()));
   };
   const handleStorage = (event: StorageEvent) => {
     if (event.key && event.key !== BUSINESS_SETTINGS_STORAGE_KEY) return;

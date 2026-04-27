@@ -4,6 +4,7 @@ import {
   applyBusinessBrandTheme,
   BusinessSettings,
   loadBusinessSettings,
+  normalizeBusinessSettings,
   saveBusinessSettings,
   splitAddressLines,
 } from '../domain/business-settings';
@@ -62,8 +63,7 @@ export async function hydrateBusinessSettingsForSession(): Promise<{
   reason?: string;
   data?: BusinessSettings;
 }> {
-  const local = loadBusinessSettings();
-  let merged: BusinessSettings = { ...local };
+  let merged = loadBusinessSettings();
   let syncedFromRemote = false;
 
   const businessContext = await getSupabaseBusinessContext({ autoCreateBusiness: true });
@@ -96,6 +96,8 @@ export async function hydrateBusinessSettingsForSession(): Promise<{
       syncedFromRemote = true;
     }
   }
+
+  merged = normalizeBusinessSettings(merged);
 
   if (syncedFromRemote) {
     saveBusinessSettings(merged);

@@ -14,6 +14,7 @@ import {
   defaultBusinessSettings,
   hexToRgbString,
   loadBusinessSettings,
+  normalizeBusinessSettings,
   normalizeHexColor,
   rgbStringToHex,
   saveBusinessSettings,
@@ -50,6 +51,9 @@ export function BusinessSettingsPage() {
   const [notice, setNotice] = useState<{ tone: InlineNoticeTone; text: string } | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const previewBrandColor = normalizeHexColor(hexInput) ?? values.brandColor;
+  const allowedMimeTypes = Array.isArray(values.eftProofAllowedMimeTypes)
+    ? values.eftProofAllowedMimeTypes
+    : defaultBusinessSettings.eftProofAllowedMimeTypes;
 
   const activePalette = useMemo(
     () => BRAND_PALETTE.find((entry) => entry.value === values.brandColor)?.value,
@@ -60,10 +64,11 @@ export function BusinessSettingsPage() {
     if (!canUseSupabaseRuntimeState()) return;
     void loadRuntimeState<BusinessSettings>('business_settings').then((result) => {
       if (!result.ok || !result.data) return;
-      setValues(result.data);
-      setHexInput(result.data.brandColor);
-      setRgbInput(hexToRgbString(result.data.brandColor));
-      applyBusinessBrandTheme(result.data);
+      const normalized = normalizeBusinessSettings(result.data);
+      setValues(normalized);
+      setHexInput(normalized.brandColor);
+      setRgbInput(hexToRgbString(normalized.brandColor));
+      applyBusinessBrandTheme(normalized);
     });
   }, []);
 
@@ -85,8 +90,8 @@ export function BusinessSettingsPage() {
       ...values,
       brandColor: normalizedBrand,
       eftProofAllowedMimeTypes:
-        values.eftProofAllowedMimeTypes.length > 0
-          ? values.eftProofAllowedMimeTypes
+        allowedMimeTypes.length > 0
+          ? allowedMimeTypes
           : defaultBusinessSettings.eftProofAllowedMimeTypes,
       eftProofMaxFileSizeBytes:
         values.eftProofMaxFileSizeBytes > 0
@@ -458,7 +463,7 @@ export function BusinessSettingsPage() {
             />
             <Input
               label="Allowed POP File Types"
-              value={values.eftProofAllowedMimeTypes.join(', ')}
+              value={allowedMimeTypes.join(', ')}
               onChange={(event) =>
                 updateField(
                   'eftProofAllowedMimeTypes',
